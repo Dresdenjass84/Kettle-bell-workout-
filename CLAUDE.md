@@ -75,6 +75,7 @@ A phone-first web app for timed kettlebell circuits. It's for Jass, who trains a
 ## Deploying
 
 - **Method:** the Netlify site is linked to this repo. Every push to `main` deploys automatically, with no build command and the repo root as the publish folder. Work on other branches doesn't go live until it's merged into `main`.
+- **Netlify free plan and private repos:** while the repo is private, Netlify only builds commits whose author is the one Git account linked to Netlify. Commits authored by anyone else, including `Claude <noreply@anthropic.com>`, fail with "Build failed: unrecognized Git contributor", and the push looks as if it did nothing. The repo was made public on 2026-11-14 to fix this. If it goes private again, author commits as the linked account, or upgrade the Netlify plan. After a failed build, use **Retry → Deploy with latest branch commit** in the Netlify UI.
 - **After changing cached files, bump the cache name** in `sw.js` (`kb-v1` → `kb-v2`) so old copies are cleared. The worker fetches from the network first, so normal updates appear on the next online visit anyway.
 - **Powered by Netlify badge:** turned off in the Netlify UI under Project configuration → General.
 - **Service worker:** registers only over `https:` (see the end of `index.html`), so local `file://` testing skips it.
