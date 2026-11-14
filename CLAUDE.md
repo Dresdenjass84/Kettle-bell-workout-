@@ -12,9 +12,10 @@ A phone-first web app for timed kettlebell circuits. It's for Jass, who trains a
 |---|---|
 | `index.html` | The whole app: CSS, markup and JS in one file, about 930 lines |
 | `manifest.webmanifest` | Settings that make it installable: name, icons, full screen, portrait |
-| `sw.js` | Service worker for offline use. Fetches from the network first and falls back to its cache. Its cache name is `kb-v5` |
+| `sw.js` | Service worker for offline use. Fetches from the network first and falls back to its cache. Its cache name is `kb-v6`. It also precaches the font files, so the app looks right offline |
+| `fonts/` | Self-hosted Barlow and Barlow Condensed (Latin subset, woff2), with the font licence in `OFL.txt` |
 | `icon-192.png`, `icon-512.png` | App icons: an orange kettlebell on dark `#101216` |
-| `netlify.toml` | Netlify settings: publish the repo root, no build, never cache `sw.js`, and security headers (CSP, nosniff, no referrer, permissions policy) for every file |
+| `netlify.toml` | Netlify settings: publish the repo root, no build, never cache `sw.js`, and security headers (CSP, nosniff, no referrer, permissions policy) for every file, and a one-year cache for `fonts/` |
 | `tests/` | Playwright checks (see Testing) |
 
 ## Requirements agreed with the user (don't change without asking)
@@ -119,10 +120,10 @@ Look at `moves.png` after any change to poses. A bad angle usually shows up as a
 
 Reviewed on 2026-11-14. The app is a static page in Chrome's sandbox: it opens no ports, runs no server on the phone and asks for no permissions beyond keeping the screen awake. It takes no text input and reads nothing from the URL.
 
-- **Headers:** `netlify.toml` sends a Content-Security-Policy that only allows the site's own files plus Google Fonts. If you add any outside resource (a CDN script, an image host, an API), add its host to the CSP or the browser will block it. `'unsafe-inline'` is needed because the script and styles live in `index.html`.
+- **Headers:** `netlify.toml` sends a Content-Security-Policy that only allows the site's own files; the app makes no requests to any other site. If you add any outside resource (a CDN script, an image host, an API), add its host to the CSP or the browser will block it. `'unsafe-inline'` is needed because the script and styles live in `index.html`.
 - **Stored data is untrusted:** history comes from `localStorage` through `hist()`, which drops malformed entries, and every field is passed through `esc()` before it goes into HTML. Keep doing both for anything new read from storage.
 - **Who controls the code:** only the `Dresdenjass84` GitHub account can push. Whoever can push to `main`, or log in to Netlify, controls what runs on the phone, so both accounts should have two-factor authentication.
-- **Privacy:** Google Fonts sees the phone's IP address when the fonts load. Self-hosting the two fonts would remove that.
+- **Fonts:** self-hosted in `fonts/` since 2026-11-14, so Google no longer sees the phone's IP address. Only the Latin subset is included; accented letters outside it fall back to the system font. Font files are cached for a year, so give a changed font a new file name.
 
 ## Working rules for this repo
 
@@ -142,3 +143,4 @@ Reviewed on 2026-11-14. The app is a static page in Chrome's sandbox: it opens n
 - **2026-11-14:** fuller figures (tapered limbs, torso, hands, feet, kettlebell with handle), a dotted bell trail, snap-and-drop rhythm for ballistic moves, and front views for the halo, Russian twist, around the world and figure 8. Cache bumped to `kb-v3`.
 - **2026-11-14:** finisher (20/10 all-out before the cool-down, none at 10 min) and a "How hard was that?" rating that nudges one setting for next time, with Undo. Fixed "1 rounds" in the preview. Cache bumped to `kb-v4`.
 - **2026-11-14:** security review. Added security headers in `netlify.toml`, escaped stored history before display, and made the app ignore malformed history entries. Cache bumped to `kb-v5`.
+- **2026-11-14:** fonts self-hosted instead of loaded from Google Fonts, CSP tightened to the site's own files only, fonts precached for offline use. Cache bumped to `kb-v6`.
