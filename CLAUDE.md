@@ -64,15 +64,14 @@ A phone-first web app for timed kettlebell circuits. It's for Jass, who trains a
 
 ## Deploying
 
-- **Current method:** Netlify does **not** watch this repo yet. Until now, deploys went through the Netlify MCP connector, which uploads the folder.
-- **Recommended:** link the site to this repo once, in the Netlify UI: **Site configuration → Build & deploy → Link repository**, with no build command and the repo root as the publish folder. Then every push to `main` deploys automatically.
+- **Method:** the Netlify site is linked to this repo. Every push to `main` deploys automatically, with no build command and the repo root as the publish folder. Work on other branches doesn't go live until it's merged into `main`.
 - **After changing cached files, bump the cache name** in `sw.js` (`kb-v1` → `kb-v2`) so old copies are cleared. The worker fetches from the network first, so normal updates appear on the next online visit anyway.
 - **Powered by Netlify badge:** turned off in the Netlify UI under Project configuration → General.
 - **Service worker:** registers only over `https:` (see the end of `index.html`), so local `file://` testing skips it.
 
 ## Testing
 
-You need Python 3 with Playwright (`pip install playwright && playwright install chromium`).
+You need Python 3 with Playwright (`pip install playwright && playwright install chromium`). If Playwright's own browser is missing or the wrong version, run the scripts with `USE_SYSTEM_CHROME=1` to use the installed Chrome or Chromium instead.
 
 ```bash
 python3 tests/check_timing.py   # every length × focus × interval × round-rest combination: exact length, no repeated moves, no empty circuits
@@ -109,5 +108,4 @@ Look at `moves.png` after any change to poses. A bad angle usually shows up as a
 - **2026-11-13:** handover to this repo. Fixed two generator bugs found by the new tests:
   - A 10-minute workout with 120 s work and 90 s rest crashed, because no plan fitted. `fitPlan` now falls back to smaller circuits.
   - A 45-minute legs workout at 15/5 came out 60 s short, because the move pool ran out of moves. `buildWorkout` now times the circuits it actually filled.
-
-  **These fixes aren't on the live site yet.**
+- **2026-11-14:** Netlify linked to this repo, so pushes to `main` now deploy automatically. The two generator fixes above went live with the first linked deploy.
