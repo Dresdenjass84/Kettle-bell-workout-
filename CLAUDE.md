@@ -10,9 +10,9 @@ A phone-first web app for timed kettlebell circuits. It's for Jass, who trains a
 
 | File | What it is |
 |---|---|
-| `index.html` | The whole app: CSS, markup and JS in one file, about 800 lines |
+| `index.html` | The whole app: CSS, markup and JS in one file, about 870 lines |
 | `manifest.webmanifest` | Settings that make it installable: name, icons, full screen, portrait |
-| `sw.js` | Service worker for offline use. Fetches from the network first and falls back to its cache. Its cache name is `kb-v2` |
+| `sw.js` | Service worker for offline use. Fetches from the network first and falls back to its cache. Its cache name is `kb-v3` |
 | `icon-192.png`, `icon-512.png` | App icons: an orange kettlebell on dark `#101216` |
 | `netlify.toml` | Netlify settings: publish the repo root, no build, never cache `sw.js` |
 | `tests/` | Playwright checks (see Testing) |
@@ -41,14 +41,17 @@ A phone-first web app for timed kettlebell circuits. It's for Jass, who trains a
 ## How `index.html` is organised (top to bottom)
 
 1. **Storage:** `store.get/set` wraps `localStorage` with the prefix `kb_` and try/catch. The keys are `kb_settings` and `kb_history`, the latter a list of entries capped at 200.
-2. **Figure engine:** draws a 2D stick figure in an SVG with viewBox `0 0 200 190` and the ground at `GROUND=182`.
+2. **Figure engine:** draws a 2D figure (tapered limbs, solid torso, hands, feet, and a kettlebell with a handle) in an SVG with viewBox `0 0 200 190` and the ground at `GROUND=182`.
    - **Angles:** pose angles are **absolute, in degrees**. 0 points down, 90 points forward (right, the way the figure faces), 180 points up, and −90 points back. The direction vector is `D(a,len)=(sin a, cos a)·len`.
    - **Pose keys:** `t` torso (hip→shoulder), `hd` head offset, `na/nf` near upper arm and forearm, `fa/ff` far arm, `nt/ns` near thigh and shin, `ft/fs` far leg, `x` horizontal offset, `y` jump lift (negative is up), `b` where the bell is (`'n'` near hand, `'f'` far hand, `'both'`, `'hip'`, `'none'`), and `toe:1` to flip the feet (used when lying on the back).
+   - **Extra pose keys (default 1):** `ls` scales the legs and `ts` the torso, to fake foreshortening (a torso tipped towards you, knees pointing at you). `sw` narrows the shoulders in front view to show the torso turning. `bo` is the bell's opacity; below 0.6 the bell is also drawn behind the body, for a bell passing behind the head or back.
    - **Grounding:** `fk()` works out the joint positions and then shifts the figure so its lowest point (feet, hands, knees, hip, head or bell) sits on the ground. That's why poses never specify a height.
    - **Front view:** a move with `view:'front'` draws front-on, with the shoulders and hips spread apart.
-   - **Animation:** `kf:[[pose, seconds], …]` loops through the poses with cosine easing. A duration of 0 jumps straight to the next pose, which the arm circles use to wrap from 360° back to 0°.
+   - **Animation:** `kf:[[pose, seconds, easing?], …]` loops through the poses. Easing is `cos` (default), `snap` (fast start), `drop` (fast finish) or `lin`. Poses tagged `hike:1` (`HIKE1`, `HIKE2`) automatically snap up out of the hike and drop back into it, which gives swings, cleans and snatches their real rhythm. A duration of 0 jumps straight to the next pose, which the arm circles use to wrap from 360° back to 0°.
    - **Interpolation:** angles are interpolated as plain numbers, so pick values that don't swing the long way round. For example, use 230 rather than −130 when coming from 180, and −180 rather than 180 when coming from −90.
    - **Centring:** `m.cx` comes from `bounds()` and keeps each move centred.
+   - **Bell trail:** the player and move sheet pass `{trail:1}`, which draws a faint dotted line along the bell's path for one loop. It's skipped when the bell barely moves.
+   - **Arm helpers:** `ik2()` solves a two-link arm, `handsF()` places both hands in front view, `bellF()` places the bell itself in front view, and `unwrapKF()` keeps angles from swinging the long way round between keyframes. The halo, Russian twist, around the world, figure 8 and knees to chest are built with them.
 3. **Poses and the move library:** `MOVES` holds 75 moves. Each has `{id, name, areas[], pat, uni, lvl, bw, cues[3], kf, view, thumb}`, plus `up` and `calls` where they apply.
    - **Ladders:** `UPS` maps a move ID to its harder version, which becomes `m.up`. Both ends must have the same `uni` setting, so a ladder never changes the number of slots.
    - **Complexes:** IDs start with `x_`. `calls:[[keyframe index, word], …]` lists the steps; the first must be at keyframe 0. The word is spoken and highlighted when the figure reaches that keyframe.
@@ -94,12 +97,12 @@ Look at `moves.png` after any change to poses. A bad angle usually shows up as a
 
 ## Known limitations and ideas
 
-- **Figures:** the stick figures are schematic. A few look rough: the halo (side view), Russian twist, around the world, and knees to chest.
+- **Figures:** still schematic. The halo, Russian twist, around the world and figure 8 now use front views, which read better than the old side views, but the hands sometimes cross the face in the halo. Knees to chest is still the weakest figure.
 - **10 kg is light for legs:** the library leans on single-leg, tempo and pulse moves to make up for it. A heavier bell would need either a weight setting or no changes at all, since timings don't depend on load.
 - **History:** stays on one device and is lost if Chrome's site data is cleared. There's no export yet.
 - **Voice:** depends on the phone's text-to-speech engine.
 - **Complex voice on the phone:** move-by-move calls were only tested in desktop Chrome with speech stubbed. Android text-to-speech can lag or drop short words; check on the real phone.
-- **Suggested to the user, not built yet:** a finisher block before the cool-down, a "how hard was that?" rating that adjusts the next session, and better figures (fuller body, bell trail, realistic rhythm, new views for the rotational moves).
+- **Suggested to the user, not built yet:** a finisher block before the cool-down, a "how hard was that?" rating that adjusts the next session, and highlighting the working muscles on the figure.
 - **Ideas the user hasn't asked for yet:**
   - history export/import (JSON)
   - progression tracking
@@ -123,3 +126,4 @@ Look at `moves.png` after any change to poses. A bad angle usually shows up as a
   - A 45-minute legs workout at 15/5 came out 60 s short, because the move pool ran out of moves. `buildWorkout` now times the circuits it actually filled.
 - **2026-11-14:** Netlify linked to this repo, so pushes to `main` now deploy automatically. The two generator fixes above went live with the first linked deploy.
 - **2026-11-14:** difficulty setting with progressive rounds, 11 harder moves and 10 complexes, and a switch for how the voice handles complexes. Service worker cache bumped to `kb-v2`.
+- **2026-11-14:** fuller figures (tapered limbs, torso, hands, feet, kettlebell with handle), a dotted bell trail, snap-and-drop rhythm for ballistic moves, and front views for the halo, Russian twist, around the world and figure 8. Cache bumped to `kb-v3`.

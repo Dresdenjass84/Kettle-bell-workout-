@@ -217,19 +217,19 @@ const store={get(k,d){try{const v=localStorage.getItem('kb_'+k);return v?JSON.pa
 /* ================= Figure engine ================= */
 const RAD=Math.PI/180, GROUND=182, CX=100;
 const SEG={torso:46,ua:24,fa:22,th:32,sh:32,head:8,neck:14,bell:7};
-const ST={t:180,hd:0,na:5,nf:5,fa:-5,ff:-5,nt:0,ns:0,ft:0,fs:0,x:0,y:0};
+const ST={t:180,hd:0,na:5,nf:5,fa:-5,ff:-5,nt:0,ns:0,ft:0,fs:0,x:0,y:0,ls:1,ts:1,sw:1,bo:1};
 const NUMK=Object.keys(ST);
 const D=(a,l)=>[Math.sin(a*RAD)*l,Math.cos(a*RAD)*l];
 const add=(p,v)=>[p[0]+v[0],p[1]+v[1]];
 function fk(p,view){
-  const hip=[0,0], sh=D(p.t,SEG.torso);
+  const hip=[0,0], sh=D(p.t,SEG.torso*p.ts), TH=SEG.th*p.ls, SH=SEG.sh*p.ls;
   const head=add(sh,D(p.t+p.hd,SEG.neck));
   let shN=sh,shF=sh,hipN=hip,hipF=hip;
-  if(view==='front'){const pp=D(p.t-90,1);shN=add(sh,[pp[0]*10,pp[1]*10]);shF=add(sh,[-pp[0]*10,-pp[1]*10]);hipN=[pp[0]*7,pp[1]*7];hipF=[-pp[0]*7,-pp[1]*7];}
+  if(view==='front'){const pp=D(p.t-90,1),w=10*p.sw;shN=add(sh,[pp[0]*w,pp[1]*w]);shF=add(sh,[-pp[0]*w,-pp[1]*w]);hipN=[pp[0]*7,pp[1]*7];hipF=[-pp[0]*7,-pp[1]*7];}
   const elN=add(shN,D(p.na,SEG.ua)), hN=add(elN,D(p.nf,SEG.fa));
   const elF=add(shF,D(p.fa,SEG.ua)), hF=add(elF,D(p.ff,SEG.fa));
-  const kN=add(hipN,D(p.nt,SEG.th)), aN=add(kN,D(p.ns,SEG.sh));
-  const kF=add(hipF,D(p.ft,SEG.th)), aF=add(kF,D(p.fs,SEG.sh));
+  const kN=add(hipN,D(p.nt,TH)), aN=add(kN,D(p.ns,SH));
+  const kF=add(hipF,D(p.ft,TH)), aF=add(kF,D(p.fs,SH));
   let tN,tF;
   if(view==='front'){tN=add(aN,[5,1]);tF=add(aF,[-5,1]);}
   else{const o=p.toe?-90:90;tN=add(aN,D(p.ns+o,7));tF=add(aF,D(p.fs+o,7));}
@@ -247,43 +247,80 @@ function fk(p,view){
   return pts;
 }
 function bounds(frames,view){let a=1e9,z=-1e9;frames.forEach(f=>{const q=fk(f[0],view);for(const k in q){if(q[k]){a=Math.min(a,q[k][0]);z=Math.max(z,q[k][0]);}}});return (a+z)/2;}
-function lerpPose(A,B,u){const o={};for(const k of NUMK)o[k]=A[k]+(B[k]-A[k])*u;o.b=A.b;o.toe=A.toe;return o;}
+function lerpPose(A,B,u){const o={};for(const k of NUMK)o[k]=A[k]+(B[k]-A[k])*u;o.b=A.b;o.toe=A.toe;o.view=A.view;return o;}
 const NS='http://www.w3.org/2000/svg';
 function el(tag,attrs,parent){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(parent)parent.appendChild(e);return e;}
+// Draws the figure: tapered limbs, a solid torso, hands, feet and a kettlebell with a handle.
+// Far-side limbs sit in a semi-transparent group so overlapping joints don't darken.
 function makeFig(svg,opt={}){
   svg.innerHTML='';
-  const near=opt.near||'#ffffff', far=opt.far||'rgba(255,255,255,.45)', bellC=opt.bell||'#ff7a3d', gc=opt.ground||'rgba(255,255,255,.25)';
+  const near=opt.near||'#ffffff', bellC=opt.bell||'#ff7a3d', gc=opt.ground||'rgba(255,255,255,.25)', farOp=opt.farOp||.42;
   el('line',{x1:10,y1:GROUND+1,x2:190,y2:GROUND+1,stroke:gc,'stroke-width':2,'stroke-linecap':'round'},svg);
-  const L=(c,w)=>el('polyline',{fill:'none',stroke:c,'stroke-width':w,'stroke-linecap':'round','stroke-linejoin':'round'},svg);
-  const g={fArm:L(far,6),fLeg:L(far,7),torso:L(near,8),nLeg:L(near,7),nArm:L(near,6)};
-  g.head=el('circle',{r:SEG.head+1,fill:near},svg);
-  g.bh=el('line',{stroke:bellC,'stroke-width':3,'stroke-linecap':'round'},svg);
-  g.bell=el('circle',{r:SEG.bell,fill:bellC},svg);
-  const P=a=>a.map(q=>q[0].toFixed(1)+','+q[1].toFixed(1)).join(' ');
-  return function draw(pose,view,cx){
+  const trail=el('polyline',{fill:'none',stroke:bellC,'stroke-width':2.2,'stroke-dasharray':'1 6','stroke-linecap':'round',opacity:0},svg);
+  const farG=el('g',{opacity:farOp},svg);
+  const seg=(w,par=svg)=>el('line',{stroke:near,'stroke-width':w,'stroke-linecap':'round'},par);
+  const dot=(r,par=svg,c=near)=>el('circle',{r,fill:c},par);
+  const g={fTh:seg(10,farG),fSh:seg(7.5,farG),fFt:seg(5.5,farG),fUa:seg(7.5,farG),fFa:seg(6,farG),fH:dot(3.6,farG)};
+  const fBell=el('g',{},svg);
+  g.torso=el('polygon',{fill:near,stroke:near,'stroke-width':5,'stroke-linejoin':'round'},svg);
+  g.neck=seg(6);g.head=dot(SEG.head+1.5);
+  g.nTh=seg(10);g.nSh=seg(7.5);g.nFt=seg(5.5);
+  const nBell=el('g',{},svg);
+  g.nUa=seg(7.5);g.nFa=seg(6);g.nH=dot(3.6);
+  const bellG=el('g',{},nBell);
+  g.handle=el('circle',{r:4.4,fill:'none',stroke:bellC,'stroke-width':2.6},bellG);
+  g.bell=el('circle',{r:SEG.bell+.8,fill:bellC},bellG);
+  g.base=el('line',{stroke:bellC,'stroke-width':3,'stroke-linecap':'round'},bellG);
+  const S=(e,a,b)=>{e.setAttribute('x1',a[0].toFixed(1));e.setAttribute('y1',a[1].toFixed(1));e.setAttribute('x2',b[0].toFixed(1));e.setAttribute('y2',b[1].toFixed(1));};
+  const C=(e,a)=>{e.setAttribute('cx',a[0].toFixed(1));e.setAttribute('cy',a[1].toFixed(1));};
+  const draw=function(pose,view,cx){
     const q=fk(pose,view);const off=CX-cx;
     for(const k in q){if(q[k])q[k]=[q[k][0]+off,q[k][1]];}
-    g.fArm.setAttribute('points',P([q.shF,q.elF,q.hF]));
-    g.nArm.setAttribute('points',P([q.shN,q.elN,q.hN]));
-    g.fLeg.setAttribute('points',P([q.hipF,q.kF,q.aF,q.tF]));
-    g.nLeg.setAttribute('points',P([q.hipN,q.kN,q.aN,q.tN]));
-    g.torso.setAttribute('points',P(view==='front'?[q.hipN,q.hipF,q.hip,q.sh,q.shN,q.shF]:[q.hip,q.sh]));
-    g.head.setAttribute('cx',q.head[0]);g.head.setAttribute('cy',q.head[1]);
-    if(q.bell){g.bell.setAttribute('visibility','visible');g.bh.setAttribute('visibility','visible');g.bell.setAttribute('cx',q.bell[0]);g.bell.setAttribute('cy',q.bell[1]);
-      g.bh.setAttribute('x1',q.bh?q.bh[0]:q.bell[0]);g.bh.setAttribute('y1',q.bh?q.bh[1]:q.bell[1]-8);g.bh.setAttribute('x2',q.bell[0]);g.bh.setAttribute('y2',q.bell[1]);}
-    else{g.bell.setAttribute('visibility','hidden');g.bh.setAttribute('visibility','hidden');}
+    farG.setAttribute('opacity',view==='front'?1:farOp);
+    S(g.fUa,q.shF,q.elF);S(g.fFa,q.elF,q.hF);C(g.fH,q.hF);
+    S(g.fTh,q.hipF,q.kF);S(g.fSh,q.kF,q.aF);S(g.fFt,q.aF,q.tF);
+    S(g.nUa,q.shN,q.elN);S(g.nFa,q.elN,q.hN);C(g.nH,q.hN);
+    S(g.nTh,q.hipN,q.kN);S(g.nSh,q.kN,q.aN);S(g.nFt,q.aN,q.tN);
+    let pts;
+    if(view==='front')pts=[q.shN,q.shF,q.hipF,q.hipN];
+    else{const f=D(pose.t-90,1),hp=q.hip,sp=q.sh;pts=[add(hp,[f[0]*3.5,f[1]*3.5]),add(sp,[f[0]*5.5,f[1]*5.5]),add(sp,[-f[0]*3.5,-f[1]*3.5]),add(hp,[-f[0]*5,-f[1]*5])];}
+    g.torso.setAttribute('points',pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' '));
+    S(g.neck,q.sh,q.head);C(g.head,q.head);
+    if(q.bell){
+      bellG.setAttribute('visibility','visible');bellG.setAttribute('opacity',pose.bo);
+      // bell held in the far hand sits behind the body
+      const host=(pose.b==='f'&&view!=='front')||pose.bo<.6?fBell:nBell;if(bellG.parentNode!==host)host.appendChild(bellG);
+      const to=q.bh||[q.bell[0],q.bell[1]-8];let ux=to[0]-q.bell[0],uy=to[1]-q.bell[1];const l=Math.hypot(ux,uy)||1;ux/=l;uy/=l;
+      C(g.bell,q.bell);C(g.handle,[q.bell[0]+ux*6.5,q.bell[1]+uy*6.5]);
+      const bx=q.bell[0]-ux*7.2,by=q.bell[1]-uy*7.2;S(g.base,[bx+uy*4,by-ux*4],[bx-uy*4,by+ux*4]);
+    }else bellG.setAttribute('visibility','hidden');
   };
+  // faint dotted line showing the path the bell travels during one loop
+  draw.setTrail=function(m){
+    if(m._trail===undefined){
+      m._trail=null;const tot=m.kf.reduce((a,f)=>a+f[1],0);const pts=[];
+      if(tot>0){for(let i=0;i<=72;i++){const q=fk(poseAt(m,tot*i/72),m.view);if(!q.bell||m.kf.some(f=>f[0].b==='hip')){pts.length=0;break;}pts.push(q.bell);}}
+      if(pts.length){const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);if(Math.max(Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys))>18)m._trail=pts;}
+    }
+    if(!m._trail){trail.setAttribute('opacity',0);return;}
+    const off=CX-m.cx;trail.setAttribute('points',m._trail.map(p=>(p[0]+off).toFixed(1)+','+p[1].toFixed(1)).join(' '));trail.setAttribute('opacity',.55);
+  };
+  return draw;
 }
+// Easing per keyframe segment. A third value in a keyframe names one; otherwise swings and other
+// ballistic moves snap up out of the hike and drop back into it, and everything else eases smoothly.
+const EASE={cos:u=>.5-.5*Math.cos(Math.PI*u),snap:u=>1-Math.pow(1-u,2.6),drop:u=>Math.pow(u,1.8),lin:u=>u};
 function poseAt(m,t){
   const f=m.kf;let tot=0;f.forEach(x=>tot+=x[1]);if(tot<=0)return f[0][0];
   let tt=t%tot;
-  for(let i=0;i<f.length;i++){const d=f[i][1];if(tt<d||i===f.length-1){const u=d?Math.min(1,tt/d):1;const e=.5-.5*Math.cos(Math.PI*u);return lerpPose(f[i][0],f[(i+1)%f.length][0],e);}tt-=d;}
+  for(let i=0;i<f.length;i++){const d=f[i][1];if(tt<d||i===f.length-1){const u=d?Math.min(1,tt/d):1;const nx=f[(i+1)%f.length][0];
+    const ek=f[i][2]||(f[i][0].hike&&!nx.hike?'snap':nx.hike&&!f[i][0].hike?'drop':'cos');return lerpPose(f[i][0],nx,EASE[ek](u));}tt-=d;}
   return f[0][0];
 }
 // Animated figure registry
 const anims=new Map();let animRAF=0;
 function animate(svg,m,opt){
-  const draw=makeFig(svg,opt);anims.set(svg,{m,draw,t0:performance.now(),clock:opt&&opt.clock});
+  const draw=makeFig(svg,opt);if(opt&&opt.trail)draw.setTrail(m);anims.set(svg,{m,draw,t0:performance.now(),clock:opt&&opt.clock});
   draw(m.kf[0][0],m.view,m.cx);
   if(!animRAF)animRAF=requestAnimationFrame(tick);
 }
@@ -305,12 +342,40 @@ const LG={
   hinge:{nt:14,ns:-8,ft:14,fs:-8}, squat:{nt:85,ns:-22,ft:85,fs:-22}, half:{nt:45,ns:-22,ft:45,fs:-22},
   lungeN:{nt:82,ns:0,ft:-12,fs:-95}, lungeF:{ft:82,fs:0,nt:-12,ns:-95}, dip:{nt:28,ns:-16,ft:28,fs:-16}
 };
-const HIKE2=P({t:100,x:-6,b:'both'},LG.hinge,A.hike2), TOP2=P({b:'both'},A.fwd2);
-const HIKE1=P({t:100,x:-6,b:'n',fa:-20,ff:-25},LG.hinge,{na:-28,nf:-38}), TOP1=P({b:'n',na:90,nf:90,fa:-20,ff:-10});
+const HIKE2=P({t:100,x:-6,b:'both',hike:1},LG.hinge,A.hike2), TOP2=P({b:'both'},A.fwd2);
+const HIKE1=P({t:100,x:-6,b:'n',fa:-20,ff:-25,hike:1},LG.hinge,{na:-28,nf:-38}), TOP1=P({b:'n',na:90,nf:90,fa:-20,ff:-10});
 const SQ={t:150,...LG.squat};
 const PLANK={t:108,na:0,nf:0,fa:0,ff:0,nt:-66,ns:-66,ft:-66,fs:-66};
+// Halo seen from the front: right of the head, behind it (faded), left, then in front of the face
+const HALO=d=>unwrapKF([[P({b:'both'},bellF(21,-62)),d],[P({b:'both',bo:.35},bellF(0,-74)),d],[P({b:'both'},bellF(-21,-62)),d],[P({b:'both'},bellF(0,-50)),d]]);
+// Russian twist from the front: seated, knees up towards you, shoulders narrow as the torso turns
+const TWIST=sd=>P({b:'both',t:180+sd*7,ts:.82,sw:.55,ls:.6,nt:140,ns:25,ft:-140,fs:-25},handsF(sd*24+2,-6,sd*24-2,-6,{t:180+sd*7,ts:.82,sw:.55}));
+// Figure 8 from the front: wide half squat, torso tipped forward (shortened), bell between and around the legs
+const F8=(b,bx,by,bo)=>{const o={ts:.62,sw:.9};const h=b==='n'?handsF(bx,by-6,-12,-14,o):handsF(12,-14,bx,by-6,o);return P({b,bo,ts:.62,sw:.9,nt:58,ns:12,ft:-58,fs:-12},h);};
+// Lying on the back hugging the knees; k=1 pulls them a little closer
+const KNEES=k=>{const s=D(88,SEG.torso),nt=140+k*8,kn=D(nt,SEG.th),sh=D(-75,SEG.sh*.5),a=ik2(s[0],s[1],kn[0]+sh[0],kn[1]+sh[1],'up');
+  return P({t:88,hd:18,toe:1,nt,ns:-75,ft:nt-4,fs:-79,na:a[0],nf:a[1],fa:a[0]-3,ff:a[1]-3});};
 const SUP={t:88,hd:15,na:-90,nf:-90,fa:-90,ff:-90,nt:-157,ns:-23,ft:-157,fs:-23,toe:1};
 const QUAD={t:104,na:0,nf:0,fa:0,ff:0,nt:0,ns:-90,ft:0,fs:-90};
+
+// Arm angles that put a hand at (hx,hy) from a shoulder at (sx,sy). side: +1 elbow out to screen right, -1 left.
+function ik2(sx,sy,hx,hy,side){
+  const L1=SEG.ua,L2=SEG.fa;let dx=hx-sx,dy=hy-sy;const d0=Math.hypot(dx,dy)||1;const d=Math.min(Math.max(d0,Math.abs(L1-L2)+.5),L1+L2-.5);
+  const a=Math.atan2(dx,dy)/RAD, al=Math.acos((L1*L1+d*d-L2*L2)/(2*L1*d))/RAD;
+  let best=null;for(const u of [a+al,a-al]){const ex=sx+Math.sin(u*RAD)*L1,ey=sy+Math.cos(u*RAD)*L1;const sc=side==='up'?-ey:side*ex+.25*ey;if(!best||sc>best.sc)best={u,ex,ey,sc};}
+  const tx=sx+dx*d/d0,ty=sy+dy*d/d0;return [best.u,Math.atan2(tx-best.ex,ty-best.ey)/RAD];
+}
+// Front view: both hands to points given relative to the hip (y negative is up). Returns na/nf/fa/ff.
+function handsF(nx,ny,fx,fy,o={}){
+  const t=o.t==null?180:o.t,ts=o.ts==null?1:o.ts,sw=o.sw==null?1:o.sw;const s=D(t,SEG.torso*ts),pp=D(t-90,1);
+  const n=ik2(s[0]+pp[0]*10*sw,s[1]+pp[1]*10*sw,nx,ny,1),f=ik2(s[0]-pp[0]*10*sw,s[1]-pp[1]*10*sw,fx,fy,-1);
+  let ff=f[1];while(ff-n[1]>180)ff-=360;while(ff-n[1]<-180)ff+=360;
+  return {na:n[0],nf:n[1],fa:f[0],ff};
+}
+// Front view, bell held in both hands: solves for the hands so the bell itself lands on (bx,by).
+function bellF(bx,by,o={}){let hx=bx,hy=by,h;for(let i=0;i<4;i++){h=handsF(hx+3,hy,hx-3,hy,o);const v=D((h.nf+h.ff)/2,SEG.bell);hx=bx-v[0];hy=by-v[1];}return h;}
+// Keeps each angle within 180 degrees of the previous keyframe so the tween takes the short way round.
+function unwrapKF(kf){const keys=['t','na','nf','fa','ff','nt','ns','ft','fs'];for(let i=1;i<kf.length;i++)for(const k of keys){const p=kf[i-1][0][k];let v=kf[i][0][k];while(v-p>180)v-=360;while(v-p<-180)v+=360;kf[i][0][k]=v;}return kf;}
 
 /* ================= Library ================= */
 // areas: full legs upper core | pat: ballistic squat lunge hinge push pull arms flex antiext rot carry
@@ -329,7 +394,7 @@ mv({id:'halftgu',name:'Half Turkish get-up',uni:1,lvl:2,areas:['full','core','up
 mv({id:'burpee',name:'Burpee',areas:['full'],pat:'ballistic',bw:1,cues:['Hands down, jump or step back to plank','Feet back in, then jump with arms up','Land soft and keep a steady pace'],kf:[[P(),.35],[P(LG.squat,{t:110,na:0,nf:0,fa:0,ff:0}),.35],[P(PLANK),.4],[P(LG.squat,{t:110,na:0,nf:0,fa:0,ff:0}),.35],[P(A.up2,{y:-14}),.4]],thumb:2});
 mv({id:'racksquat',name:'Rack squat',uni:1,areas:['legs','full'],pat:'squat',cues:['Clean once, then hold the rack','Squat deep with chest up','Resist leaning toward the bell'],kf:[[P({b:'n'},A.rackN),.9],[P(SQ,A.rackN,{b:'n'}),.9]],thumb:1});
 mv({id:'jumpsquat',name:'Jump squat',areas:['legs','full'],pat:'squat',bw:1,cues:['Sit back to half depth','Explode up, arms drive high','Land softly, straight into the next rep'],kf:[[P({t:150,nt:68,ns:-25,ft:68,fs:-25,na:-40,nf:-40,fa:-40,ff:-40}),.45],[P({y:-16,na:160,nf:160,fa:160,ff:160}),.4]]});
-mv({id:'fig8',name:'Figure 8',areas:['core','full'],pat:'rot',cues:['Half squat, flat back','Pass the bell between the legs, hand to hand','Smooth rhythm, eyes forward'],kf:[[P({t:110,nt:30,ns:-18,ft:30,fs:-18,b:'n',na:-30,nf:-30,fa:20,ff:40}),.6],[P({t:110,nt:30,ns:-18,ft:30,fs:-18,b:'f',fa:-30,ff:-30,na:20,nf:40}),.6]]});
+mv({id:'fig8',name:'Figure 8',view:'front',areas:['core','full'],pat:'rot',cues:['Half squat, flat back','Pass the bell between the legs, hand to hand','Smooth rhythm, eyes forward'],kf:unwrapKF([[F8('n',2,14,.35),.5],[F8('n',30,10,1),.5],[F8('f',-2,14,.35),.5],[F8('f',-30,10,1),.5]])});
 mv({id:'deadlift',name:'Deadlift',areas:['legs','full'],pat:'hinge',cues:['Bell between the feet, hips back','Flat back, grip the handle, stand tall','Squeeze glutes at the top, 2 seconds down'],kf:[[P({b:'both'},A.down2),1.6],[P({t:122,nt:55,ns:-25,ft:55,fs:-25,b:'both'},A.down2),1]],thumb:1});
 // --- Legs
 mv({id:'gobsquat',name:'Goblet squat',areas:['legs','full'],pat:'squat',cues:['Bell at chest, elbows in','Sit between the heels, chest tall','Drive through the whole foot'],kf:[[P(A.gob,{b:'both'}),1],[P(SQ,A.gob,{b:'both'}),1]],thumb:1});
@@ -360,16 +425,16 @@ mv({id:'curl',name:'Bicep curl',areas:['upper'],pat:'arms',cues:['Hold by the ho
 mv({id:'triceps',name:'Overhead triceps extension',areas:['upper'],pat:'arms',cues:['Bell behind the head, held by the horns','Elbows point up, close to the head','Extend fully, lower slowly'],kf:[[P({b:'both',na:168,nf:-20,fa:168,ff:-20}),1],[P(A.up2,{b:'both'}),.8]]});
 mv({id:'pullover',name:'Pullover',areas:['upper','core'],pat:'pull',cues:['Lie down, bell above the chest','Lower behind the head with soft elbows','Ribs stay down as you pull back'],kf:[[P(SUP,{b:'both',na:-180,nf:-180,fa:-180,ff:-180}),1.4],[P(SUP,{b:'both',na:-255,nf:-262,fa:-255,ff:-262}),1]]});
 mv({id:'bottomsup',name:'Bottoms-up press',uni:1,lvl:2,areas:['upper','core'],pat:'push',cues:['Bell upside down, crush the handle','Forearm vertical, press slowly','Builds grip and shoulder stability'],kf:[[P({b:'n',na:10,nf:178}),1],[P(A.ohN,{b:'n'}),1]],thumb:1});
-mv({id:'halo',name:'Halo',areas:['upper','core'],pat:'arms',cues:['Hold by the horns, bottom up','Circle close around the head','Change direction every few reps'],kf:[[P({b:'both',na:60,nf:196,fa:60,ff:196}),.8],[P({b:'both',na:170,nf:322,fa:170,ff:322}),.8]]});
+mv({id:'halo',name:'Halo',view:'front',areas:['upper','core'],pat:'arms',cues:['Hold by the horns, bottom up','Circle close around the head','Change direction every few reps'],kf:HALO(.55)});
 // --- Core
-mv({id:'twist',name:'Russian twist',areas:['core'],pat:'rot',cues:['Sit tall, lean back slightly','Rotate from the ribs, bell beside each hip','Feet down to make it easier'],kf:[[P({t:-160,nt:125,ns:30,ft:125,fs:30,na:70,nf:120,fa:70,ff:120,b:'both'}),.6],[P({t:-158,nt:125,ns:30,ft:125,fs:30,na:15,nf:40,fa:15,ff:40,b:'both'}),.6]]});
+mv({id:'twist',name:'Russian twist',view:'front',areas:['core'],pat:'rot',cues:['Sit tall, lean back slightly','Rotate from the ribs, bell beside each hip','Feet down to make it easier'],kf:unwrapKF([[TWIST(1),.6],[TWIST(-1),.6]])});
 mv({id:'deadbug',name:'Dead bug',areas:['core'],pat:'antiext',cues:['Bell pressed up over the chest','Low back stays glued to the floor','Extend one leg slowly, alternate'],kf:[[P(SUP,{b:'both',na:-180,nf:-180,fa:-180,ff:-180,nt:-180,ns:-90,ft:-180,fs:-90,toe:0}),.9],[P(SUP,{b:'both',na:-180,nf:-180,fa:-180,ff:-180,nt:-100,ns:-96,ft:-180,fs:-90,toe:0}),.9],[P(SUP,{b:'both',na:-180,nf:-180,fa:-180,ff:-180,nt:-180,ns:-90,ft:-180,fs:-90,toe:0}),.9],[P(SUP,{b:'both',na:-180,nf:-180,fa:-180,ff:-180,ft:-100,fs:-96,nt:-180,ns:-90,toe:0}),.9]],thumb:1});
 mv({id:'situp',name:'Sit-up with bell overhead',areas:['core'],pat:'flex',cues:['Bell pressed straight up','Roll up one vertebra at a time','Arm stays vertical the whole way'],kf:[[P(SUP,{b:'both',na:-180,nf:-180,fa:-180,ff:-180}),1],[P(SUP,{b:'both',t:180,hd:0,na:-180,nf:-180,fa:-180,ff:-180}),1]]});
 mv({id:'pullthrough',name:'Plank pull-through',areas:['core','upper'],pat:'antiext',cues:['High plank, bell beside you','Reach under and drag it to the other side','Hips stay level'],kf:[[P(PLANK,{b:'n',na:-40,nf:-40}),.7],[P(PLANK,{b:'n'}),.7],[P(PLANK,{b:'f',fa:-40,ff:-40}),.7],[P(PLANK,{b:'f'}),.7]]});
 mv({id:'suitcasemarch',name:'Suitcase march',uni:1,areas:['core','full'],pat:'carry',cues:['Bell at your side, stand tall','March knees to hip height','Don\'t lean toward the bell'],kf:[[P({b:'n',nt:80,ns:0},A.downN),.5],[P({b:'n'},A.downN),.5],[P({b:'n',ft:80,fs:0},A.downN),.5],[P({b:'n'},A.downN),.5]]});
 mv({id:'waitermarch',name:'Overhead march',uni:1,areas:['core','upper'],pat:'carry',cues:['Bell locked out overhead','March slowly, ribs down','Arm stays vertical'],kf:[[P({b:'n',nt:80,ns:0},A.ohN),.6],[P({b:'n'},A.ohN),.6],[P({b:'n',ft:80,fs:0},A.ohN),.6],[P({b:'n'},A.ohN),.6]]});
 mv({id:'windmill',name:'Windmill',uni:1,lvl:2,view:'front',areas:['core','upper'],pat:'rot',cues:['Bell locked out overhead, eyes on it','Push the hip out, slide the free hand down the leg','Rise slowly, arm stays vertical'],kf:[[P({b:'n',na:178,nf:178,fa:-8,ff:-8,nt:8,ns:8,ft:-12,fs:-12}),1.3],[P({b:'n',t:232,na:178,nf:178,fa:4,ff:4,nt:8,ns:8,ft:-12,fs:-12,x:8}),1.3]],thumb:1});
-mv({id:'aroundworld',name:'Around the world',view:'front',areas:['core'],pat:'rot',cues:['Stand tall, bell at the hips','Pass it around the waist hand to hand','Hips still, change direction halfway'],kf:[[P(A.fdown2,{b:'both'}),.45],[P({b:'n',na:22,nf:14,fa:30,ff:40}),.45],[P({b:'f',fa:-22,ff:-14,na:-30,nf:-40}),.45]]});
+mv({id:'aroundworld',name:'Around the world',view:'front',areas:['core'],pat:'rot',cues:['Stand tall, bell at the hips','Pass it around the waist hand to hand','Hips still, change direction halfway'],kf:unwrapKF([[P({b:'both'},handsF(3,-6,-3,-6)),.45],[P({b:'n'},handsF(25,-14,-16,-4)),.45],[P({b:'both',bo:.3},handsF(9,-16,-9,-16)),.45],[P({b:'f'},handsF(16,-4,-25,-14)),.45]])});
 mv({id:'legraise',name:'Leg raises',areas:['core'],pat:'flex',bw:1,cues:['Lie flat, hands by your sides','Raise straight legs to vertical','Lower slowly without arching'],kf:[[P(SUP,{nt:-178,ns:-178,ft:-178,fs:-178,toe:0}),1],[P(SUP,{nt:-96,ns:-96,ft:-96,fs:-96,toe:0}),1.2]]});
 mv({id:'climbers',name:'Mountain climbers',areas:['core','full'],pat:'antiext',bw:1,cues:['High plank, shoulders over hands','Drive knees to the chest fast','Hips stay low'],kf:[[P(PLANK,{nt:40,ns:-50}),.3],[P(PLANK,{ft:40,fs:-50}),.3]]});
 mv({id:'woodchop',name:'Woodchop',uni:1,areas:['core','full'],pat:'rot',cues:['Start low by the outside of one knee','Rotate and lift diagonally overhead','Pivot the back foot'],kf:[[P({t:130,nt:50,ns:-20,ft:50,fs:-20,na:15,nf:15,fa:15,ff:15,b:'both'}),.8],[P({na:150,nf:150,fa:150,ff:150,b:'both'}),.8]]});
@@ -425,7 +490,7 @@ wm({id:'w_squat',name:'Bodyweight squat',cues:['Arms forward for balance','Sit d
 wm({id:'w_hinge',name:'Hip hinge drill',cues:['Soft knees, push hips back','Feel the hamstrings stretch'],kf:[[P(),.9],[P({t:100,x:-6},LG.hinge,{na:0,nf:0,fa:0,ff:0}),.9]]});
 wm({id:'w_lunge',name:'Reverse lunge with reach',cues:['Step back and reach both arms up','Alternate legs'],kf:[[P(),.8],[P(LG.lungeN,A.up2),.8],[P(),.8],[P(LG.lungeF,A.up2),.8]]});
 wm({id:'w_inch',name:'Inchworm',cues:['Fold, walk hands out to plank','Walk back and stand tall'],kf:[[P(),.8],[P({t:42,na:45,nf:45,fa:45,ff:45}),.9],[P(PLANK),.9],[P({t:42,na:45,nf:45,fa:45,ff:45}),.9]]});
-wm({id:'w_halo',name:'Light halo',cues:['Bell by the horns, slow circles','Loosen the shoulders'],kf:[[P({b:'both',na:60,nf:196,fa:60,ff:196}),1],[P({b:'both',na:170,nf:322,fa:170,ff:322}),1]]});
+wm({id:'w_halo',name:'Light halo',view:'front',cues:['Bell by the horns, slow circles','Loosen the shoulders'],kf:HALO(.8)});
 wm({id:'w_jacks',name:'Jumping jacks',view:'front',cues:['Light on the toes','Step side to side for low impact'],kf:[[P({na:10,nf:10,fa:-10,ff:-10,nt:3,ns:3,ft:-3,fs:-3}),.35],[P({na:160,nf:170,fa:-160,ff:-170,nt:18,ns:18,ft:-18,fs:-18,y:-4}),.35]]});
 wm({id:'w_catcow',name:'Cat–cow',cues:['On hands and knees','Round, then arch, with your breath'],kf:[[P(QUAD,{t:108,hd:25}),1.2],[P(QUAD,{t:100,hd:-25}),1.2]]});
 wm({id:'w_swing',name:'Easy swings',cues:['Half-power swings','Groove the hinge'],kf:[[HIKE2,.6],[P({b:'both',na:60,nf:60,fa:60,ff:60}),.6]]});
@@ -439,7 +504,7 @@ cm({id:'c_hipflex',name:'Kneeling hip flexor stretch',uni:1,cues:['Back knee dow
 cm({id:'c_child',name:'Child\'s pose',cues:['Sit back to the heels','Arms long, forehead down'],kf:[[P({t:64,nt:95,ns:-88,ft:95,fs:-88,na:100,nf:100,fa:100,ff:100}),2.5],[P({t:68,nt:95,ns:-88,ft:95,fs:-88,na:100,nf:100,fa:100,ff:100}),2.5]]});
 cm({id:'c_cobra',name:'Cobra',cues:['Hips on the floor','Press the chest up gently'],kf:[[P({t:136,hd:15,nt:-90,ns:-90,ft:-90,fs:-90,na:-40,nf:30,fa:-40,ff:30,toe:1}),2],[P({t:142,hd:20,nt:-90,ns:-90,ft:-90,fs:-90,na:-35,nf:25,fa:-35,ff:25,toe:1}),2]]});
 cm({id:'c_chest',name:'Chest opener',cues:['Clasp hands behind you','Lift the chest, squeeze shoulder blades'],kf:[[P({na:-38,nf:-38,fa:-38,ff:-38,hd:12}),2],[P({na:-48,nf:-48,fa:-48,ff:-48,hd:18}),2]]});
-cm({id:'c_knees',name:'Knees to chest',cues:['Lie down, hug the knees in','Rock gently side to side'],kf:[[P(SUP,{nt:155,ns:-130,ft:155,fs:-130,na:-150,nf:-200,fa:-150,ff:-200,toe:0}),2],[P(SUP,{nt:160,ns:-128,ft:160,fs:-128,na:-148,nf:-198,fa:-148,ff:-198,toe:0}),2]]});
+cm({id:'c_knees',name:'Knees to chest',cues:['Lie down, hug the knees in','Rock gently side to side'],kf:[[KNEES(0),2],[KNEES(1),2]]});
 cm({id:'c_side',name:'Overhead side reach',view:'front',cues:['Reach up and over','Alternate sides slowly'],kf:[[P({t:160,na:150,nf:140,fa:172,ff:160}),2],[P({t:200,na:-172,nf:-160,fa:-150,ff:-140}),2]]});
 cm({id:'c_catcow',name:'Cat–cow',cues:['Slow, with the breath'],kf:[[P(QUAD,{t:108,hd:25}),1.5],[P(QUAD,{t:100,hd:-25}),1.5]]});
 const COOL_BY={full:['c_fold','c_quad','c_hipflex','c_chest','c_child','c_cobra','c_knees','c_side'],legs:['c_fold','c_quad','c_hipflex','c_knees','c_child','c_side','c_cobra'],upper:['c_chest','c_child','c_side','c_cobra','c_fold','c_catcow'],core:['c_cobra','c_child','c_knees','c_side','c_catcow','c_fold']};
@@ -616,7 +681,7 @@ let WK=null;
 const FOCUSNAME={full:'Full body',legs:'Legs',upper:'Upper body',core:'Core'};
 const fmt=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
 const fmtMin=s=>{const m=Math.round(s/60);return m+' min';};
-function thumbSvg(m){const s=document.createElementNS(NS,'svg');s.setAttribute('viewBox','0 0 200 190');s.setAttribute('class','thumb');staticFig(s,m,{near:'#e9ebef',far:'rgba(233,235,239,.4)',ground:'rgba(255,255,255,.15)'});return s;}
+function thumbSvg(m){const s=document.createElementNS(NS,'svg');s.setAttribute('viewBox','0 0 200 190');s.setAttribute('class','thumb');staticFig(s,m,{near:'#e9ebef',farOp:.38,ground:'rgba(255,255,255,.15)'});return s;}
 const SWAPICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h13l-3-3M20 17H7l3 3"/></svg>';
 function renderPreview(){
   const wk=WK, c=wk.cfg;
@@ -661,7 +726,7 @@ function closeSheet(){$('sheet').classList.remove('show');const s=$('sheet-box')
 $('sheet').onclick=e=>{if(e.target.id==='sheet')closeSheet();};
 function openMove(m){
   openSheet('<h3>'+m.name+'</h3><div class="summary-line">'+(m.areas||[]).map(a=>'<span class="pill">'+FOCUSNAME[a]+'</span>').join('')+(m.uni?'<span class="pill">Each side</span>':'')+(m.bw?'<span class="pill">No bell</span>':'')+(m.calls?'<span class="pill">Complex</span>':'')+'</div><svg class="bigfig" viewBox="0 0 200 190"></svg><ul class="cue-list">'+m.cues.map(c=>'<li>'+c+'</li>').join('')+'</ul>'+(m.up?'<p class="sub">Harder version: '+ALL[m.up].name+'</p>':'')+'<button class="btn sec" id="sheet-close">Close</button>');
-  animate($('sheet-box').querySelector('svg.bigfig'),m,{});
+  animate($('sheet-box').querySelector('svg.bigfig'),m,{trail:1});
   $('sheet-close').onclick=closeSheet;
 }
 
@@ -718,7 +783,7 @@ function enter(i){
   const isRest=!it.id;
   $('p-name').textContent=m?(isRest?'Next: ':'')+m.name:'';
   const sd=$('p-side');if(showIt&&showIt.side){sd.textContent=showIt.side==='L'?'LEFT':'RIGHT';sd.classList.remove('hide');}else sd.classList.add('hide');
-  const fig=$('p-fig');if(m){fig.style.visibility='visible';animate(fig,m,{near:'#ffffff',far:'rgba(255,255,255,.45)',bell:it.k==='work'?'#ffd166':'#ff9a5c',ground:'rgba(255,255,255,.35)',clock:it.k==='work'?workClock:null});}else{fig.style.visibility='hidden';stopAnim(fig);}
+  const fig=$('p-fig');if(m){fig.style.visibility='visible';animate(fig,m,{near:'#ffffff',bell:it.k==='work'?'#ffd166':'#ff9a5c',ground:'rgba(255,255,255,.35)',clock:it.k==='work'?workClock:null,trail:1});}else{fig.style.visibility='hidden';stopAnim(fig);}
   $('p-cues').innerHTML=m?(m.calls?'<div class="steps">'+m.calls.map(c=>'<span>'+c[1]+'</span>').join('')+'</div>':'')+m.cues.slice(0,m.calls?2:3).map(c=>'<div>'+c+'</div>').join(''):'';
   const nx=it.next;
   $('p-next').textContent=(!isRest&&nx&&it.k!=='ready')?'Then: '+nameWithSide(nx):'';
