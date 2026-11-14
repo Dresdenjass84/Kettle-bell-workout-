@@ -1,0 +1,113 @@
+# Kettlebell Timer: handover for Claude Code
+
+A phone-first web app for timed kettlebell circuits. It's for Jass, who trains at home with **one 10 kg kettlebell**, aiming to **build muscle and lose fat**. It's built as a single static page with no framework, no build step and no backend.
+
+- **Live site:** https://jass-kettlebell-timer.netlify.app (Netlify site `jass-kettlebell-timer`, site ID `43e712c6-151f-4f07-b390-dfb02e3588cd`)
+- **Used on:** an Android phone in Chrome, installed to the home screen, propped on the floor during workouts.
+- **About Jass:** prefers direct, honest feedback and detailed step-by-step technical guidance with nothing assumed.
+
+## Files
+
+| File | What it is |
+|---|---|
+| `index.html` | The whole app: CSS, markup and JS in one file, about 720 lines |
+| `manifest.webmanifest` | Settings that make it installable: name, icons, full screen, portrait |
+| `sw.js` | Service worker for offline use. Fetches from the network first and falls back to its cache. Its cache name is `kb-v1` |
+| `icon-192.png`, `icon-512.png` | App icons: an orange kettlebell on dark `#101216` |
+| `netlify.toml` | Netlify settings: publish the repo root, no build, never cache `sw.js` |
+| `tests/` | Playwright checks (see Testing) |
+
+## Requirements agreed with the user (don't change without asking)
+
+- **Workout length:** 10 / 15 / 20 / 30 / 45 minutes, **including** the warm-up and cool-down. Every combination must come out at exactly the chosen length.
+- **Focus:** Full body / Legs / Upper body / Core.
+- **Work/rest presets:** 30/30, 40/20 (default), 45/15, 50/10, or custom (work 15–120 s, rest 5–90 s, in 5 s steps).
+- **Rest between rounds:** adjustable at 30 / 45 / 60 (default) / 90 / 120 s.
+- **Structure:** circuits of moves repeated for rounds, with a 3-round target. 10 and 15-minute workouts usually come out at 2 rounds.
+- **One-sided moves:** each side gets a **full** work interval: left, a normal rest, then right. A one-sided move takes 2 slots in a circuit.
+- **Audio:** beeps **and** voice. 3-2-1 beeps before the end of every interval, a double beep at 10 s left in work intervals of 25 s or more, a "go" tone when work starts, and a lower tone when work ends. During rests the voice says "Rest. Next, X, left side". At round rests it says "Round N done… Last round…" and at circuit changes "Circuit A done…". The voice uses the browser's speech synthesis in en-GB.
+- **Experience level:** comfortable with the basics, so snatches, get-ups and windmills are included.
+- **History:** saved on the phone in `localStorage`. Moves from the **last 2 sessions** are weighted down (×0.12) for variety.
+- **Moves shown as:** looping stick-figure animations plus 2–3 form cues. The user accepted that the figures show the *shape* of a move, not fine technique.
+- **Look:** dark, high-contrast and full screen while training. The background colour shows the phase: work is burnt orange `#c2410c`, rest is teal `#0f766e`, warm-up and cool-down are indigo `#4338ca`, get ready is amber `#a16207`.
+- **Screen:** kept awake with the Wake Lock API, which is requested again when the page becomes visible.
+
+## How `index.html` is organised (top to bottom)
+
+1. **Storage:** `store.get/set` wraps `localStorage` with the prefix `kb_` and try/catch. The keys are `kb_settings` and `kb_history`, the latter a list of entries capped at 200.
+2. **Figure engine:** draws a 2D stick figure in an SVG with viewBox `0 0 200 190` and the ground at `GROUND=182`.
+   - **Angles:** pose angles are **absolute, in degrees**. 0 points down, 90 points forward (right, the way the figure faces), 180 points up, and −90 points back. The direction vector is `D(a,len)=(sin a, cos a)·len`.
+   - **Pose keys:** `t` torso (hip→shoulder), `hd` head offset, `na/nf` near upper arm and forearm, `fa/ff` far arm, `nt/ns` near thigh and shin, `ft/fs` far leg, `x` horizontal offset, `y` jump lift (negative is up), `b` where the bell is (`'n'` near hand, `'f'` far hand, `'both'`, `'hip'`, `'none'`), and `toe:1` to flip the feet (used when lying on the back).
+   - **Grounding:** `fk()` works out the joint positions and then shifts the figure so its lowest point (feet, hands, knees, hip, head or bell) sits on the ground. That's why poses never specify a height.
+   - **Front view:** a move with `view:'front'` draws front-on, with the shoulders and hips spread apart.
+   - **Animation:** `kf:[[pose, seconds], …]` loops through the poses with cosine easing. A duration of 0 jumps straight to the next pose, which the arm circles use to wrap from 360° back to 0°.
+   - **Interpolation:** angles are interpolated as plain numbers, so pick values that don't swing the long way round. For example, use 230 rather than −130 when coming from 180, and −180 rather than 180 when coming from −90.
+   - **Centring:** `m.cx` comes from `bounds()` and keeps each move centred.
+3. **Poses and the move library:** `MOVES` holds 54 moves. Each has `{id, name, areas[], pat, uni, lvl, bw, cues[3], kf, view, thumb}`.
+   - **areas:** any of `full`, `legs`, `upper`, `core`.
+   - **pat:** one of `ballistic`, `squat`, `lunge`, `hinge`, `push`, `pull`, `arms`, `flex`, `antiext`, `rot`, `carry`.
+   - Warm-ups are in `WARM` and stretches in `COOL`. Which ones each focus uses is set by `WARM_BY` and `COOL_BY`.
+4. **Workout generator:**
+   - **Base times:** `BASE[mins]=[warm-up seconds, cool-down seconds]`, plus `READY=10` and `SET=15` (the get-set gap between the warm-up and the circuits).
+   - **`fitPlan(M,W,R,RR,maxSlots,allow)`:** searches circuits `c` (1–5), rounds `r` (1–4) and total slots `S`. The circuit time is `D = r·(S·W + (S−c)·R) + (r·c−1)·RR`. The score is `|M−D|·0.5` plus penalties: r≠3, an average of fewer than 4 or more than 6 slots per circuit, and each extra circuit.
+   - **Exact length:** whatever is left over (`M−D`) is split between the warm-up and cool-down, then `spread()` divides each across its items. That's what makes the total exact.
+   - **`chooseCircuits`:** fills the slots by working through `TEMPLATE[focus]`, the list of movement patterns for that focus. A one-sided move fits only where 2 slots are left.
+   - **`swapMove`:** swaps a move for another of the same pattern with the same one-sided setting, so the timing doesn't change.
+   - **`sequence(wk)`:** builds the list of intervals. Each has a kind (`ready|warm|set|work|rest|round|cool`), a duration, a move ID, a side, a circuit, a round and a pointer to what's next.
+5. **Audio:** `initAudio()` must run from a user tap, which is why it's called from Start and Pause/Resume. `beep(freq,dur,vol)` uses Web Audio and `say(text)` uses speech synthesis.
+6. **Setup UI, preview, move sheet, moves library and history.**
+7. **Player:**
+   - **Timer:** a 100 ms `setInterval` that advances by the real time elapsed, multiplied by `SPEED`. `SPEED` exists only so tests can fast-forward.
+   - **Intervals:** `enter(i)` sets up an interval and `announce(it)` handles its sounds. Beeps fire when the count crosses a whole second.
+   - **Finishing:** `finish(complete)` saves the history entry, but only for sessions longer than 60 s.
+8. **Test hook:** `window.KB = {MOVES, WARM, COOL, ALL, buildWorkout, sequence, fitPlan, fk, setSpeed, PL, poseAt, makeFig}`. Keep it, because the tests depend on it.
+
+## Deploying
+
+- **Current method:** Netlify does **not** watch this repo yet. Until now, deploys went through the Netlify MCP connector, which uploads the folder.
+- **Recommended:** link the site to this repo once, in the Netlify UI: **Site configuration → Build & deploy → Link repository**, with no build command and the repo root as the publish folder. Then every push to `main` deploys automatically.
+- **After changing cached files, bump the cache name** in `sw.js` (`kb-v1` → `kb-v2`) so old copies are cleared. The worker fetches from the network first, so normal updates appear on the next online visit anyway.
+- **Powered by Netlify badge:** turned off in the Netlify UI under Project configuration → General.
+- **Service worker:** registers only over `https:` (see the end of `index.html`), so local `file://` testing skips it.
+
+## Testing
+
+You need Python 3 with Playwright (`pip install playwright && playwright install chromium`).
+
+```bash
+python3 tests/check_timing.py   # every length × focus × interval × round-rest combination: exact length, no repeated moves, no empty circuits
+python3 tests/render_moves.py   # draws every move's keyframes to tests/out/moves.png so you can look at them
+python3 tests/run_through.py    # phone-sized run: setup → preview → swap → play at 60–400× speed → summary → history → moves; fails on JS errors
+```
+
+Look at `moves.png` after any change to poses. A bad angle usually shows up as a figure floating, sinking, or upside down.
+
+## Known limitations and ideas
+
+- **Figures:** the stick figures are schematic. A few look rough: the halo (side view), Russian twist, around the world, and knees to chest.
+- **10 kg is light for legs:** the library leans on single-leg, tempo and pulse moves to make up for it. A heavier bell would need either a weight setting or no changes at all, since timings don't depend on load.
+- **History:** stays on one device and is lost if Chrome's site data is cleared. There's no export yet.
+- **Voice:** depends on the phone's text-to-speech engine.
+- **Ideas the user hasn't asked for yet:**
+  - history export/import (JSON)
+  - progression tracking
+  - a "favourite/never show" toggle per move
+  - workout presets
+  - a halfway voice cue
+  - better figure art
+
+## Working rules for this repo
+
+- Keep it **one static file plus the PWA files**, with no build step, unless the user agrees otherwise.
+- Use British English in the interface text.
+- Run all three test scripts before committing changes to timing, the generator or poses.
+- Never weaken the exact-length guarantee.
+
+## Changelog
+
+- **2026-11-08:** first release, deployed to Netlify. Installable on Android and works offline.
+- **2026-11-13:** handover to this repo. Fixed two generator bugs found by the new tests:
+  - A 10-minute workout with 120 s work and 90 s rest crashed, because no plan fitted. `fitPlan` now falls back to smaller circuits.
+  - A 45-minute legs workout at 15/5 came out 60 s short, because the move pool ran out of moves. `buildWorkout` now times the circuits it actually filled.
+
+  **These fixes aren't on the live site yet.**
