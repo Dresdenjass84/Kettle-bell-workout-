@@ -30,6 +30,7 @@ h2{font-family:'Barlow Condensed','Roboto Condensed','Arial Narrow',sans-serif;f
 .row{display:flex;gap:10px}.row>*{flex:1}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px}
 .toggles{display:flex;gap:8px}
+.hint{color:var(--tx3);font-size:14px;line-height:1.35;margin:8px 2px 0}
 .tog{flex:1;display:flex;align-items:center;justify-content:space-between;min-height:50px;padding:0 14px;border-radius:12px;background:var(--card);border:1px solid var(--line);font-size:16px}
 .tog i{width:40px;height:24px;border-radius:12px;background:var(--line);position:relative;transition:.2s}
 .tog i:after{content:'';position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s}
@@ -49,7 +50,11 @@ nav.tabs svg{width:24px;height:24px}
 .thumb{width:58px;height:50px;flex:none;background:var(--card2);border-radius:10px}
 .mrow .nm{flex:1;min-width:0}
 .mrow .nm b{display:block;font-weight:600;font-size:16px}
-.mrow .nm small{color:var(--tx3);font-size:13px}
+.mrow .nm small{color:var(--tx3);font-size:13px;display:block}
+.mrow .nm small.rung{color:var(--acc2);padding-top:3px}
+.steps{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:0 0 8px}
+.steps span{padding:5px 12px;border-radius:10px;background:rgba(0,0,0,.22);font-weight:600;font-size:18px;opacity:.6}
+.steps span.on{background:#fff;color:#111;opacity:1}
 .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 7px;border-radius:6px;background:#3a2417;color:var(--acc2);margin-left:6px;vertical-align:2px}
 .swap{width:44px;height:44px;border-radius:10px;background:var(--card2);display:flex;align-items:center;justify-content:center;flex:none}
 .swap svg{width:20px;height:20px}
@@ -111,6 +116,10 @@ nav.tabs svg{width:24px;height:24px}
   <div class="lbl">Focus</div>
   <div class="grid2" id="c-focus"></div>
 
+  <div class="lbl">Difficulty</div>
+  <div class="chips" id="c-diff"></div>
+  <p class="hint" id="diff-hint"></p>
+
   <div class="lbl">Work / rest</div>
   <div class="chips" id="c-int"></div>
   <div class="row hide" id="custom-int" style="margin-top:8px">
@@ -126,6 +135,10 @@ nav.tabs svg{width:24px;height:24px}
     <button class="tog" id="t-voice">Voice <i></i></button>
     <button class="tog" id="t-beep">Beeps <i></i></button>
   </div>
+
+  <div class="lbl">Voice during complexes</div>
+  <div class="chips" id="c-cxv"></div>
+  <p class="hint" id="cxv-hint"></p>
 
   <button class="btn" id="b-build">Build workout</button>
 </div>
@@ -270,13 +283,13 @@ function poseAt(m,t){
 // Animated figure registry
 const anims=new Map();let animRAF=0;
 function animate(svg,m,opt){
-  const draw=makeFig(svg,opt);anims.set(svg,{m,draw,t0:performance.now()});
+  const draw=makeFig(svg,opt);anims.set(svg,{m,draw,t0:performance.now(),clock:opt&&opt.clock});
   draw(m.kf[0][0],m.view,m.cx);
   if(!animRAF)animRAF=requestAnimationFrame(tick);
 }
 function stopAnim(svg){anims.delete(svg);}
 function tick(now){
-  for(const [svg,a] of anims){if(!svg.isConnected){anims.delete(svg);continue;}a.draw(poseAt(a.m,(now-a.t0)/1000),a.m.view,a.m.cx);}
+  for(const [svg,a] of anims){if(!svg.isConnected){anims.delete(svg);continue;}a.draw(poseAt(a.m,a.clock?a.clock():(now-a.t0)/1000),a.m.view,a.m.cx);}
   animRAF=anims.size?requestAnimationFrame(tick):0;
 }
 function staticFig(svg,m,opt){const draw=makeFig(svg,opt);const i=m.thumb!=null?m.thumb:Math.min(1,m.kf.length-1);draw(m.kf[i][0],m.view,m.cx);}
@@ -362,6 +375,48 @@ mv({id:'climbers',name:'Mountain climbers',areas:['core','full'],pat:'antiext',b
 mv({id:'woodchop',name:'Woodchop',uni:1,areas:['core','full'],pat:'rot',cues:['Start low by the outside of one knee','Rotate and lift diagonally overhead','Pivot the back foot'],kf:[[P({t:130,nt:50,ns:-20,ft:50,fs:-20,na:15,nf:15,fa:15,ff:15,b:'both'}),.8],[P({na:150,nf:150,fa:150,ff:150,b:'both'}),.8]]});
 mv({id:'birddog',name:'Bird dog',areas:['core'],pat:'antiext',bw:1,cues:['On hands and knees, back flat','Reach the opposite arm and leg long','Pause, return, alternate'],kf:[[P(QUAD),.6],[P(QUAD,{na:100,nf:100,ft:-95,fs:-95}),.8],[P(QUAD),.6],[P(QUAD,{fa:100,ff:100,nt:-95,ns:-95}),.8]],thumb:1});
 
+// --- Harder variations
+const GOB=P(A.gob,{b:'both'}), GSQ=P(SQ,A.gob,{b:'both'}), UP2=P(A.up2,{b:'both'}), DOWN2=P({b:'both'},A.down2);
+const LUN=P(LG.lungeN,A.gob,{b:'both'}), LUF=P(LG.lungeF,A.gob,{b:'both'});
+const RACK=P(A.rackN,{b:'n'}), OH=P(A.ohN,{b:'n'}), RSQ=P(SQ,A.rackN,{b:'n'}), RLUN=P(LG.lungeN,A.rackN,{b:'n'});
+const CURL=P({b:'both',na:4,nf:165,fa:4,ff:165});
+const PUSHDN={t:99,na:-70,nf:0,fa:-70,ff:0,nt:-79,ns:-79,ft:-79,fs:-79};
+const ROW0=P({t:105,b:'n',x:-6,fa:20,ff:30},LG.hinge,A.downN), ROW1=P(ROW0,{na:-150,nf:-10});
+const SLD=P({t:96,nt:5,ns:-6,ft:-82,fs:-82,na:0,nf:0,fa:10,ff:10,b:'n'});
+const GM=P({t:100,b:'both',x:-6},LG.hinge,{na:110,nf:240,fa:110,ff:240});
+const CROUCH=P(LG.squat,{t:110,na:0,nf:0,fa:0,ff:0,b:'n'});
+const WIDE=P(A.fgob,{b:'both',nt:24,ns:18,ft:-24,fs:-18});
+mv({id:'squat15',name:'One-and-a-half squat',areas:['legs','full'],pat:'squat',cues:['Squat to full depth','Come halfway up, sink back down','Then stand: that is one rep'],kf:[[GOB,1],[GSQ,.6],[P(GSQ,{t:162,nt:45,ns:-22,ft:45,fs:-22}),.6],[GSQ,.9]],thumb:1});
+mv({id:'lungepress',name:'Reverse lunge to press',areas:['legs','full','upper'],pat:'lunge',cues:['Step back into a deep lunge','Drive up and press the bell overhead','Alternate legs each rep'],kf:[[GOB,.9],[LUN,.9],[UP2,.7],[GOB,.9],[LUF,.9],[UP2,.7]],thumb:1});
+mv({id:'cossack',name:'Cossack squat',view:'front',areas:['legs'],pat:'lunge',cues:['Very wide stance, feet stay planted','Sink deep over one heel, other leg straight','Shift across low if you can'],kf:[[WIDE,.9],[P(WIDE,{nt:84,ns:-12,ft:-52,fs:-52,x:14}),.9],[WIDE,.9],[P(WIDE,{ft:-84,fs:12,nt:52,ns:52,x:-14}),.9]],thumb:1});
+mv({id:'swingsquat',name:'Swing to goblet squat',areas:['full','legs','core'],pat:'ballistic',cues:['Swing, then catch the bell at the chest','Drop straight into a deep squat','Stand, push the bell out, hike again'],kf:[[HIKE2,.55],[TOP2,.45],[GOB,.7],[GSQ,.8],[GOB,.5]],thumb:3});
+mv({id:'curlpress',name:'Curl to press',areas:['upper'],pat:'arms',cues:['Curl by the horns to the chest','Press overhead without leaning back','Lower slowly through both parts'],kf:[[DOWN2,.8],[CURL,.6],[UP2,.7],[CURL,1]],thumb:2});
+mv({id:'situppress',name:'Sit-up to press',areas:['core','upper'],pat:'flex',cues:['Bell hugged at the chest','Sit all the way up, then press overhead','Lower the bell, roll down slowly'],kf:[[P(SUP,{b:'both',na:-100,nf:-190,fa:-100,ff:-190}),1],[P(SUP,{b:'both',t:180,hd:0,na:20,nf:-195,fa:20,ff:-195}),.6],[P(SUP,{b:'both',t:180,hd:0,na:178,nf:-182,fa:178,ff:-182}),.6],[P(SUP,{b:'both',t:180,hd:0,na:20,nf:-195,fa:20,ff:-195}),1]],thumb:2});
+mv({id:'rackthruster',name:'Single-arm thruster',uni:1,areas:['full','legs','upper'],pat:'squat',cues:['Bell in the rack, squat deep','Drive up and press in one move','Lower to the rack as you sit'],kf:[[RSQ,.8],[OH,.8]],thumb:0});
+mv({id:'racklungepress',name:'Rack lunge to press',uni:1,areas:['legs','full','upper'],pat:'lunge',cues:['Bell in the rack, step back and lower','Stand and press overhead','Same leg every rep, then switch'],kf:[[RACK,.8],[RLUN,.9],[OH,.6],[OH,.6]],thumb:1});
+mv({id:'srdlrow',name:'Single-leg deadlift to row',uni:1,areas:['legs','upper','core'],pat:'hinge',cues:['Hinge on one leg until the torso is flat','Hold there and row the bell to the hip','Lower the bell, then stand'],kf:[[P({b:'n'},A.downN),1.1],[SLD,.7],[P(SLD,{na:-150,nf:-10}),.7],[SLD,.9]],thumb:2});
+mv({id:'pushuprow',name:'Push-up to row',uni:1,areas:['upper','core'],pat:'pull',cues:['One hand on the bell handle, feet wide','Full push-up, then row the bell','Hips stay square to the floor'],kf:[[P(PLANK,{b:'n'}),.7],[P(PUSHDN,{b:'n'}),.7],[P(PLANK,{b:'n'}),.6],[P(PLANK,{b:'n',na:-120,nf:-10}),.7]],thumb:3});
+mv({id:'tgu',name:'Turkish get-up',uni:1,lvl:3,areas:['full','core','upper'],pat:'antiext',cues:['Eyes on the bell, arm locked the whole way','Elbow, hand, sweep the leg to a half-kneel, stand','Reverse every step slowly'],kf:[[P(SUP,{b:'n',na:-180,nf:-180,ft:-90,fs:-90}),1],[P(SUP,{b:'n',t:120,na:-180,nf:-180,fa:-12,ff:-90,ft:-90,fs:-90}),1],[P(SUP,{b:'n',t:150,na:-180,nf:-180,fa:-22,ff:-22,ft:-90,fs:-90}),1.2],[P({b:'n',na:-180,nf:-180,nt:85,ns:0,ft:0,fs:-90}),1.2],[P({b:'n',na:-180,nf:-180}),1],[P({b:'n',na:-180,nf:-180,nt:85,ns:0,ft:0,fs:-90}),1.2],[P(SUP,{b:'n',t:150,na:-180,nf:-180,fa:-22,ff:-22,ft:-90,fs:-90}),1.2],[P(SUP,{b:'n',t:120,na:-180,nf:-180,fa:-12,ff:-90,ft:-90,fs:-90}),1]],thumb:3});
+// --- Complexes: several moves chained without putting the bell down. calls = [keyframe index, word the voice says]
+mv({id:'x_csp',name:'Clean, squat, press',uni:1,areas:['full','legs','upper'],pat:'ballistic',cues:['Clean to the rack','Squat deep with the bell racked','Stand and press, then back to the swing'],kf:[[HIKE1,.6],[RACK,.8],[RSQ,.8],[RACK,.6],[OH,.6],[RACK,.5]],calls:[[0,'Clean'],[1,'Squat'],[3,'Press']],thumb:2});
+mv({id:'x_cpl',name:'Clean, press, lunge',uni:1,areas:['full','legs','upper'],pat:'lunge',cues:['Clean and press','Bell back to the rack','Reverse lunge on the bell side'],kf:[[HIKE1,.6],[RACK,.6],[OH,.6],[RACK,.8],[RLUN,.8],[RACK,.5]],calls:[[0,'Clean'],[1,'Press'],[3,'Lunge']],thumb:4});
+mv({id:'x_gsl',name:'Squat, press, lunge',areas:['full','legs','upper'],pat:'squat',cues:['Goblet squat straight into a press','Bell back to the chest','One reverse lunge each leg'],kf:[[GOB,.8],[GSQ,.8],[UP2,.6],[GOB,.8],[LUN,.8],[GOB,.8],[LUF,.8]],calls:[[0,'Squat'],[1,'Press'],[3,'Lunge'],[5,'Lunge']],thumb:1});
+mv({id:'x_ssp',name:'Swing, squat, press',areas:['full','legs','upper'],pat:'ballistic',cues:['Swing and catch the bell at the chest','Squat deep','Drive up into a press, then hike again'],kf:[[HIKE2,.55],[TOP2,.5],[GOB,.8],[GSQ,.8],[UP2,.6],[GOB,.5]],calls:[[0,'Swing'],[2,'Squat'],[3,'Press']],thumb:3});
+mv({id:'x_rcp',name:'Row, clean, press',uni:1,areas:['upper','full'],pat:'pull',cues:['One strict row from the hinge','Hike back and clean to the rack','Press, lower, and hinge again'],kf:[[ROW0,.7],[ROW1,.7],[ROW0,.4],[HIKE1,.6],[RACK,.6],[OH,.6],[RACK,.6]],calls:[[0,'Row'],[2,'Clean'],[4,'Press']],thumb:1});
+mv({id:'x_mm',name:'Man maker',uni:1,areas:['full','upper','core'],pat:'push',cues:['Push-up with one hand on the bell, then row it','Jump the feet in and clean the bell','Press overhead, then back down to the plank'],kf:[[P(PLANK,{b:'n'}),.7],[P(PUSHDN,{b:'n'}),.7],[P(PLANK,{b:'n'}),.6],[P(PLANK,{b:'n',na:-120,nf:-10}),.6],[P(PLANK,{b:'n'}),.5],[CROUCH,.6],[RACK,.6],[OH,.6],[RACK,.5],[CROUCH,.5]],calls:[[0,'Push-up'],[2,'Row'],[5,'Clean'],[6,'Press']],thumb:3});
+mv({id:'x_cpe',name:'Curl, press, extend',areas:['upper'],pat:'arms',cues:['Curl to the chest, press overhead','Lower the bell behind the head','Extend, then lower all the way down'],kf:[[DOWN2,.7],[CURL,.6],[UP2,.7],[P({b:'both',na:168,nf:340,fa:168,ff:340}),.7],[UP2,.6],[CURL,.8]],calls:[[0,'Curl'],[1,'Press'],[2,'Extend']],thumb:3});
+mv({id:'x_snl',name:'Snatch to overhead lunge',uni:1,lvl:3,areas:['full','legs','core'],pat:'ballistic',cues:['Snatch and lock out overhead','Reverse lunge with the arm locked','Stand tall before the next snatch'],kf:[[HIKE1,.6],[OH,.8],[P(LG.lungeN,A.ohN,{b:'n'}),.8],[OH,.5]],calls:[[0,'Snatch'],[1,'Lunge']],thumb:2});
+mv({id:'x_pp',name:'Pull-through to push-up',areas:['core','upper'],pat:'antiext',cues:['Drag the bell under you to each side','Then one full push-up','Hips level the whole time'],kf:[[P(PLANK,{b:'n',na:-40,nf:-40}),.7],[P(PLANK,{b:'n'}),.6],[P(PLANK,{b:'f',fa:-40,ff:-40}),.7],[P(PLANK,{b:'f'}),.6],[P(PUSHDN,{b:'f'}),.7],[P(PLANK,{b:'f'}),.4]],calls:[[0,'Drag'],[2,'Drag'],[4,'Push-up']],thumb:4});
+mv({id:'x_legs',name:'Good morning, squat, lunge',areas:['legs','full'],pat:'hinge',cues:['Hinge with the bell hugged at the chest','Stand, then goblet squat','One reverse lunge each leg'],kf:[[GOB,.9],[GM,.9],[GOB,.8],[GSQ,.8],[GOB,.8],[LUN,.8],[GOB,.8],[LUF,.8]],calls:[[0,'Hinge'],[2,'Squat'],[4,'Lunge'],[6,'Lunge']],thumb:1});
+// Progression ladders: each move points at its harder version. Both must have the same one-sided setting so timings never change.
+const UPS={deadlift:'swing2',swing2:'swingsquat',h2h:'swingsquat',swingsquat:'x_ssp',gobsquat:'squat15',temposquat:'squat15',squat15:'thruster',pulsesquat:'thruster',thruster:'x_gsl',jumpsquat:'burpee',
+  goblunge:'lungepress',lungepress:'x_gsl',latlunge:'cossack',sumo:'cossack',rdl:'goodmorning',goodmorning:'x_legs',bridge:'rdl',
+  floorpress2:'pushup',pushup:'tappushup',tappushup:'x_pp',row2:'highpull',curl:'curlpress',triceps:'curlpress',curlpress:'x_cpe',
+  situp:'situppress',deadbug:'pullthrough',pullthrough:'x_pp',birddog:'climbers',aroundworld:'fig8',
+  swing1:'snatch',snatch:'x_snl',clean:'cleanpress',cleanpress:'x_csp',floorpress:'press',press:'pushpress',pushpress:'cleanpress',
+  racksquat:'rackthruster',rackthruster:'x_csp',splitsquat:'racklunge',racklunge:'racklungepress',racklungepress:'x_cpl',
+  suitcasedl:'srdl',srdl:'srdlrow',row:'renegade',renegade:'pushuprow',pushuprow:'x_mm',halftgu:'tgu',suitcasemarch:'waitermarch',slbridge:'srdl'};
+
 // --- Warm-up (bodyweight / light)
 const WARM=[];const wm=o=>{o.view=o.view||'side';WARM.push(o);};
 wm({id:'w_march',name:'March in place',cues:['Knees up, arms swinging','Easy pace, breathe'],kf:[[P({nt:70,ns:0,na:-25,nf:-15,fa:35,ff:60}),.45],[P({ft:70,fs:0,fa:-25,ff:-15,na:35,nf:60}),.45]]});
@@ -390,6 +445,7 @@ cm({id:'c_catcow',name:'Cat–cow',cues:['Slow, with the breath'],kf:[[P(QUAD,{t
 const COOL_BY={full:['c_fold','c_quad','c_hipflex','c_chest','c_child','c_cobra','c_knees','c_side'],legs:['c_fold','c_quad','c_hipflex','c_knees','c_child','c_side','c_cobra'],upper:['c_chest','c_child','c_side','c_cobra','c_fold','c_catcow'],core:['c_cobra','c_child','c_knees','c_side','c_catcow','c_fold']};
 
 const ALL={};[...MOVES,...WARM,...COOL].forEach(m=>{m.cx=bounds(m.kf,m.view);ALL[m.id]=m;});
+for(const k in UPS)ALL[k].up=UPS[k];
 
 /* ================= Workout generator ================= */
 const TEMPLATE={
@@ -403,9 +459,9 @@ const matches=(m,tok)=>tok==='core'?COREPATS.includes(m.pat):m.pat===tok;
 const BASE={10:[120,60],15:[150,90],20:[180,120],30:[240,150],45:[300,180]};
 const READY=10, SET=15;
 function recentIds(){const h=store.get('history',[]);const s=new Set();h.slice(0,2).forEach(e=>(e.moves||[]).forEach(id=>s.add(id)));return s;}
-function pick(list,recent){
+function pick(list,recent,boost){
   if(!list.length)return null;
-  const w=list.map(m=>recent.has(m.id)?.12:1);const tot=w.reduce((a,b)=>a+b,0);let r=Math.random()*tot;
+  const w=list.map(m=>(recent.has(m.id)?.12:1)*(boost&&boost(m)?2.5:1));const tot=w.reduce((a,b)=>a+b,0);let r=Math.random()*tot;
   for(let i=0;i<list.length;i++){r-=w[i];if(r<=0)return list[i];}return list[list.length-1];
 }
 function fitPlan(M,W,R,RR,maxSlots,allow,minPer=3){
@@ -421,30 +477,43 @@ function fitPlan(M,W,R,RR,maxSlots,allow,minPer=3){
   if(!best)return {c:1,r:1,S:1,D:W,score:0};
   return best;
 }
-function chooseCircuits(plan,focus,recent){
+// Difficulty: 'std' repeats the same moves every round; 'hard' climbs one rung of each move's ladder per round;
+// 'max' starts one rung up, climbs, and may open with a complex.
+const DIFFS=[['std','Standard'],['hard','Hard'],['max','Brutal']];
+const basePool=(focus,diff)=>MOVES.filter(m=>(focus==='full'||m.areas.includes(focus))&&(diff==='max'||!m.calls));
+function ladderFor(m,rounds,diff,used){
+  const ok=id=>id&&!used.has(id);let cur=m;
+  if(diff==='max'&&ok(cur.up))cur=ALL[cur.up];
+  const out=[cur.id];
+  for(let r=1;r<rounds;r++){if(diff!=='std'&&ok(cur.up)&&!out.includes(cur.up))cur=ALL[cur.up];out.push(cur.id);}
+  return out;
+}
+function chooseCircuits(plan,focus,recent,diff){
   const used=new Set(), circuits=[], tpl=TEMPLATE[focus];
-  const pool=MOVES.filter(m=>focus==='full'||m.areas.includes(focus));
+  const pool=basePool(focus,diff);
   for(let ci=0;ci<plan.c;ci++){
     const cap=Math.floor(plan.S/plan.c)+(ci<plan.S%plan.c?1:0);
-    let filled=0,k=ci*2,guard=0;const moves=[];
+    let filled=0,k=ci*2,guard=0;const moves=[],ladders=[];
     while(filled<cap&&guard++<60){
       const left=cap-filled, tok=tpl[k%tpl.length];k++;
       let cand=pool.filter(m=>!used.has(m.id)&&matches(m,tok)&&(m.uni?2:1)<=left);
       if(!cand.length&&guard>tpl.length)cand=pool.filter(m=>!used.has(m.id)&&(m.uni?2:1)<=left);
-      const m=pick(cand,recent);if(!m)continue;
-      used.add(m.id);moves.push(m.id);filled+=m.uni?2:1;
+      const m=pick(cand,recent,diff==='std'?null:x=>x.up&&!used.has(x.up));if(!m)continue;
+      used.add(m.id);const lad=ladderFor(m,plan.r,diff,used);lad.forEach(id=>used.add(id));
+      moves.push(lad[0]);ladders.push(lad);filled+=m.uni?2:1;
     }
-    circuits.push({moves,rounds:plan.r});
+    circuits.push({moves,ladders,rounds:plan.r});
   }
   return circuits;
 }
 function buildWorkout(cfg){
+  if(!cfg.diff)cfg.diff='hard';
   const T=cfg.mins*60;let [w,c]=BASE[cfg.mins];
   const M=T-w-c-SET-READY;
   const pool=MOVES.filter(m=>cfg.focus==='full'||m.areas.includes(cfg.focus));
   const plan=fitPlan(M,cfg.work,cfg.rest,cfg.rr,pool.reduce((a,m)=>a+(m.uni?2:1),0),Math.min(60,w-90+c-45));
   const recent=recentIds();
-  const circuits=chooseCircuits(plan,cfg.focus,recent).filter(cc=>cc.moves.length);
+  const circuits=chooseCircuits(plan,cfg.focus,recent,cfg.diff).filter(cc=>cc.moves.length);
   // time what was actually filled (the pool can run short), so the total stays exact
   const slotsOf=cc=>cc.moves.reduce((a,id)=>a+(ALL[id].uni?2:1),0);
   plan.c=circuits.length;plan.S=circuits.reduce((a,cc)=>a+slotsOf(cc),0);
@@ -462,11 +531,14 @@ function buildWorkout(cfg){
 }
 function spread(arr,total){const b=Math.floor(total/arr.length);let rem=total-b*arr.length;arr.forEach(x=>{x.dur=b+(rem>0?1:0);rem--;});}
 function swapMove(wk,ci,idx){
-  const cur=ALL[wk.circuits[ci].moves[idx]];const used=new Set(wk.circuits.flatMap(c=>c.moves));
-  const pool=MOVES.filter(m=>(wk.cfg.focus==='full'||m.areas.includes(wk.cfg.focus))&&!used.has(m.id)&&m.uni===cur.uni);
+  const cc=wk.circuits[ci], cur=ALL[cc.moves[idx]];
+  const used=new Set(wk.circuits.flatMap(c=>c.ladders.flat()));
+  const pool=basePool(wk.cfg.focus,wk.cfg.diff).filter(m=>!used.has(m.id)&&m.uni===cur.uni);
   let cand=pool.filter(m=>m.pat===cur.pat||(COREPATS.includes(cur.pat)&&COREPATS.includes(m.pat)));
   if(!cand.length)cand=pool;
-  const m=pick(cand,recentIds());if(m)wk.circuits[ci].moves[idx]=m.id;
+  const m=pick(cand,recentIds());if(!m)return;
+  cc.ladders[idx].forEach(id=>used.delete(id));used.add(m.id);
+  const lad=ladderFor(m,cc.rounds,wk.cfg.diff,used);cc.moves[idx]=lad[0];cc.ladders[idx]=lad;
 }
 const LETTER='ABCDE';
 function sequence(wk){
@@ -476,12 +548,12 @@ function sequence(wk){
   seq.push({k:'set',dur:SET});
   wk.circuits.forEach((c,ci)=>{
     for(let r=1;r<=c.rounds;r++){
-      const slots=[];c.moves.forEach(id=>{const m=ALL[id];if(m.uni){slots.push({id,side:'L'},{id,side:'R'});}else slots.push({id});});
+      const slots=[];c.moves.forEach((id0,mi)=>{const lad=c.ladders?c.ladders[mi]:[id0];const id=lad[Math.min(r-1,lad.length-1)];const m=ALL[id];if(m.uni){slots.push({id,side:'L'},{id,side:'R'});}else slots.push({id});});
       slots.forEach((s,si)=>{
         seq.push({k:'work',dur:work,id:s.id,side:s.side,circ:ci,round:r,rounds:c.rounds});
         const lastSlot=si===slots.length-1;
         if(!lastSlot)seq.push({k:'rest',dur:rest,circ:ci,round:r,rounds:c.rounds});
-        else{const lastAll=ci===wk.circuits.length-1&&r===c.rounds;if(!lastAll)seq.push({k:'round',dur:rr,circ:ci,round:r,rounds:c.rounds,newCirc:r===c.rounds});}
+        else{const lastAll=ci===wk.circuits.length-1&&r===c.rounds;if(!lastAll)seq.push({k:'round',dur:rr,circ:ci,round:r,rounds:c.rounds,newCirc:r===c.rounds,up:r<c.rounds&&!!c.ladders&&c.ladders.some(l=>l[r]!==l[r-1])});}
       });
     }
   });
@@ -503,15 +575,15 @@ function beep(freq,dur,vol=.35){
     const t=actx.currentTime;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol,t+.01);g.gain.setValueAtTime(vol,t+dur-.04);g.gain.linearRampToValueAtTime(0,t+dur);
     o.connect(g);g.connect(actx.destination);o.start(t);o.stop(t+dur+.02);}catch(e){}
 }
-function say(text){
+function say(text,quick){
   if(!settings.voice||!('speechSynthesis' in window))return;
-  try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.rate=1.02;u.lang='en-GB';
+  try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.rate=quick?1.2:1.02;u.lang='en-GB';
     const v=voices.find(v=>v.lang==='en-GB')||voices.find(v=>/^en/.test(v.lang));if(v)u.voice=v;speechSynthesis.speak(u);}catch(e){}
 }
 
 /* ================= Settings + setup UI ================= */
 const PRESETS=[[30,30,'30 / 30'],[40,20,'40 / 20'],[45,15,'45 / 15'],[50,10,'50 / 10'],['c','c','Custom']];
-const settings=Object.assign({mins:20,focus:'full',preset:1,work:40,rest:20,rr:60,voice:true,beep:true},store.get('settings',{}));
+const settings=Object.assign({mins:20,focus:'full',preset:1,work:40,rest:20,rr:60,voice:true,beep:true,diff:'hard',cxVoice:'step'},store.get('settings',{}));
 const $=id=>document.getElementById(id);
 function saveSettings(){store.set('settings',settings);}
 function chipRow(host,items,isOn,onTap,cls){host.innerHTML='';items.forEach((it,i)=>{const b=document.createElement('button');b.className='chip'+(isOn(it,i)?' on':'');b.textContent=it.label;b.onclick=()=>{onTap(it,i);};host.appendChild(b);});}
@@ -523,6 +595,10 @@ function renderSetup(){
   $('cw').textContent=settings.work+'s';$('cr').textContent=settings.rest+'s';
   chipRow($('c-rr'),[30,45,60,90,120].map(v=>({v,label:v+'s'})),it=>it.v===settings.rr,it=>{settings.rr=it.v;saveSettings();renderSetup();});
   $('t-voice').classList.toggle('on',settings.voice);$('t-beep').classList.toggle('on',settings.beep);
+  chipRow($('c-diff'),DIFFS.map(([v,label])=>({v,label})),it=>it.v===settings.diff,it=>{settings.diff=it.v;saveSettings();renderSetup();});
+  $('diff-hint').textContent={std:'The same moves every round.',hard:'Each round swaps in a harder version of the move, ending on complexes where it can.',max:'Starts on the harder versions, climbs every round, and can open with complexes.'}[settings.diff];
+  chipRow($('c-cxv'),[['step','Move by move'],['once','Name once']].map(([v,label])=>({v,label})),it=>it.v===settings.cxVoice,it=>{settings.cxVoice=it.v;saveSettings();renderSetup();});
+  $('cxv-hint').textContent=!settings.voice?'Voice is off, so nothing is spoken.':settings.cxVoice==='step'?'A complex chains moves without putting the bell down. The voice calls each move in time with the figure, for example “Clean… squat… press”.':'A complex chains moves without putting the bell down. The voice names it once during the rest before.';
 }
 document.querySelectorAll('#custom-int button').forEach(b=>b.onclick=()=>{const k=b.dataset.k,d=+b.dataset.d;const lim=k==='work'?[15,120]:[5,90];settings[k]=Math.max(lim[0],Math.min(lim[1],settings[k]+d));saveSettings();renderSetup();});
 $('t-voice').onclick=()=>{settings.voice=!settings.voice;saveSettings();renderSetup();};
@@ -545,7 +621,7 @@ const SWAPICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke
 function renderPreview(){
   const wk=WK, c=wk.cfg;
   $('pv-title').textContent=c.mins+' min · '+FOCUSNAME[c.focus];
-  $('pv-pills').innerHTML=[c.work+'s work / '+c.rest+'s rest',c.rr+'s between rounds',wk.circuits.length+(wk.circuits.length>1?' circuits':' circuit')+' × '+wk.plan.r+' rounds'].map(t=>'<span class="pill">'+t+'</span>').join('');
+  $('pv-pills').innerHTML=[c.work+'s work / '+c.rest+'s rest',c.rr+'s between rounds',wk.circuits.length+(wk.circuits.length>1?' circuits':' circuit')+' × '+wk.plan.r+' rounds',DIFFS.find(d=>d[0]===c.diff)[1]].map(t=>'<span class="pill">'+t+'</span>').join('');
   const body=$('pv-body');body.innerHTML='';
   const wsum=wk.warm.reduce((a,x)=>a+x.dur,0)+READY;
   body.insertAdjacentHTML('beforeend','<div class="sec-h"><h2>Warm-up</h2><span>'+fmt(wsum)+'</span></div>');
@@ -559,8 +635,10 @@ function renderPreview(){
     cc.moves.forEach((id,idx)=>{
       const m=ALL[id];const row=document.createElement('div');row.className='mrow';
       row.appendChild(thumbSvg(m));
-      const nm=document.createElement('div');nm.className='nm';nm.innerHTML='<b>'+m.name+(m.uni?'<span class="tag">L + R</span>':'')+'</b><small>'+(m.uni?'Left then right, '+c.work+'s each':c.work+'s')+'</small>';
-      nm.onclick=()=>openMove(m);row.appendChild(nm);
+      const nm=document.createElement('div');nm.className='nm';nm.innerHTML='<b>'+m.name+(m.calls?'<span class="tag">Complex</span>':'')+(m.uni?'<span class="tag">L + R</span>':'')+'</b><small>'+(m.uni?'Left then right, '+c.work+'s each':c.work+'s')+'</small>';
+      nm.querySelector('b').onclick=nm.querySelector('small').onclick=()=>openMove(m);
+      cc.ladders[idx].forEach((rid,ri)=>{if(ri===0||rid===cc.ladders[idx][ri-1])return;const u=ALL[rid];const e=document.createElement('small');e.className='rung';e.textContent='Round '+(ri+1)+': '+u.name;e.onclick=()=>openMove(u);nm.appendChild(e);});
+      row.appendChild(nm);
       const sw=document.createElement('button');sw.className='swap';sw.setAttribute('aria-label','Swap '+m.name);sw.innerHTML=SWAPICO;sw.onclick=()=>{swapMove(WK,ci,idx);renderPreview();};
       row.appendChild(sw);card.appendChild(row);
     });
@@ -573,8 +651,8 @@ function renderPreview(){
   const total=sequence(wk).reduce((a,s)=>a+s.dur,0);
   body.insertAdjacentHTML('beforeend','<p class="sub" style="margin-top:14px;text-align:center">Total '+fmt(total)+'. Tap a move to see how it\'s done, or swap it.</p>');
 }
-$('b-build').onclick=()=>{WK=buildWorkout({mins:settings.mins,focus:settings.focus,work:settings.work,rest:settings.rest,rr:settings.rr});renderPreview();show('preview');};
-$('b-reshuffle').onclick=()=>{WK=buildWorkout(WK.cfg);renderPreview();window.scrollTo(0,0);};
+$('b-build').onclick=()=>{WK=buildWorkout({mins:settings.mins,focus:settings.focus,work:settings.work,rest:settings.rest,rr:settings.rr,diff:settings.diff});renderPreview();show('preview');};
+$('b-reshuffle').onclick=()=>{WK=buildWorkout(Object.assign({},WK.cfg));renderPreview();window.scrollTo(0,0);};
 $('b-back').onclick=()=>show('setup');
 
 /* ================= Move sheet ================= */
@@ -582,7 +660,7 @@ function openSheet(html){$('sheet-box').innerHTML=html;$('sheet').classList.add(
 function closeSheet(){$('sheet').classList.remove('show');const s=$('sheet-box').querySelector('svg.bigfig');if(s)stopAnim(s);}
 $('sheet').onclick=e=>{if(e.target.id==='sheet')closeSheet();};
 function openMove(m){
-  openSheet('<h3>'+m.name+'</h3><div class="summary-line">'+(m.areas||[]).map(a=>'<span class="pill">'+FOCUSNAME[a]+'</span>').join('')+(m.uni?'<span class="pill">Each side</span>':'')+(m.bw?'<span class="pill">No bell</span>':'')+'</div><svg class="bigfig" viewBox="0 0 200 190"></svg><ul class="cue-list">'+m.cues.map(c=>'<li>'+c+'</li>').join('')+'</ul><button class="btn sec" id="sheet-close">Close</button>');
+  openSheet('<h3>'+m.name+'</h3><div class="summary-line">'+(m.areas||[]).map(a=>'<span class="pill">'+FOCUSNAME[a]+'</span>').join('')+(m.uni?'<span class="pill">Each side</span>':'')+(m.bw?'<span class="pill">No bell</span>':'')+(m.calls?'<span class="pill">Complex</span>':'')+'</div><svg class="bigfig" viewBox="0 0 200 190"></svg><ul class="cue-list">'+m.cues.map(c=>'<li>'+c+'</li>').join('')+'</ul>'+(m.up?'<p class="sub">Harder version: '+ALL[m.up].name+'</p>':'')+'<button class="btn sec" id="sheet-close">Close</button>');
   animate($('sheet-box').querySelector('svg.bigfig'),m,{});
   $('sheet-close').onclick=closeSheet;
 }
@@ -594,7 +672,7 @@ function renderMoves(){
   const list=$('m-list');list.innerHTML='';
   MOVES.filter(m=>moveFilter==='all'||m.areas.includes(moveFilter)).forEach(m=>{
     const row=document.createElement('div');row.className='mrow';row.style.cursor='pointer';row.appendChild(thumbSvg(m));
-    row.insertAdjacentHTML('beforeend','<div class="nm"><b>'+m.name+(m.uni?'<span class="tag">L + R</span>':'')+'</b><small>'+m.areas.map(a=>FOCUSNAME[a]).join(' · ')+'</small></div>');
+    row.insertAdjacentHTML('beforeend','<div class="nm"><b>'+m.name+(m.calls?'<span class="tag">Complex</span>':'')+(m.uni?'<span class="tag">L + R</span>':'')+'</b><small>'+m.areas.map(a=>FOCUSNAME[a]).join(' · ')+'</small></div>');
     row.onclick=()=>openMove(m);list.appendChild(row);
   });
 }
@@ -609,7 +687,7 @@ function renderHistory(){
   const list=$('h-list');
   if(!h.length){list.innerHTML='<div class="empty">No workouts yet. Your finished sessions will show up here.</div>';return;}
   list.innerHTML=h.map(e=>{const d=new Date(e.date);
-    return '<div class="card hist"><div class="top"><b>'+FOCUSNAME[e.focus]+' · '+fmtMin(e.secs)+(e.complete?'':' <span class="tag">ended early</span>')+'</b><small>'+d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})+'</small></div><p>'+e.work+'/'+e.rest+' · '+(e.moves||[]).map(id=>ALL[id]?ALL[id].name:id).join(', ')+'</p></div>';}).join('');
+    return '<div class="card hist"><div class="top"><b>'+FOCUSNAME[e.focus]+' · '+fmtMin(e.secs)+(e.complete?'':' <span class="tag">ended early</span>')+'</b><small>'+d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})+'</small></div><p>'+e.work+'/'+e.rest+' · '+(e.diff?DIFFS.find(d=>d[0]===e.diff)[1]+' · ':'')+(e.moves||[]).map(id=>ALL[id]?ALL[id].name:id).join(', ')+'</p></div>';}).join('');
 }
 $('b-clear').onclick=()=>{
   openSheet('<h3>Clear history?</h3><p class="sub">This deletes every saved workout on this phone. Move variety will start fresh.</p><div class="row"><button class="btn sec" id="cx">Cancel</button><button class="btn" id="cy">Clear</button></div>');
@@ -632,7 +710,7 @@ function startWorkout(){
   wakeOn();enter(0);resume();
 }
 function enter(i){
-  PL.i=i;const it=PL.seq[i];PL.left=it.dur;PL.lastWhole=Math.ceil(it.dur);
+  PL.i=i;const it=PL.seq[i];PL.left=it.dur;PL.lastWhole=Math.ceil(it.dur);PL.stepKey=-1;
   const pl=$('player');pl.className='show k-'+it.k;
   $('p-phase').textContent=KIND[it.k]+(it.k==='warm'||it.k==='cool'?' '+it.n+'/'+it.of:'');
   // what to show: the move for work/warm/cool, the upcoming move for rests
@@ -640,14 +718,30 @@ function enter(i){
   const isRest=!it.id;
   $('p-name').textContent=m?(isRest?'Next: ':'')+m.name:'';
   const sd=$('p-side');if(showIt&&showIt.side){sd.textContent=showIt.side==='L'?'LEFT':'RIGHT';sd.classList.remove('hide');}else sd.classList.add('hide');
-  const fig=$('p-fig');if(m){fig.style.visibility='visible';animate(fig,m,{near:'#ffffff',far:'rgba(255,255,255,.45)',bell:it.k==='work'?'#ffd166':'#ff9a5c',ground:'rgba(255,255,255,.35)'});}else{fig.style.visibility='hidden';stopAnim(fig);}
-  $('p-cues').innerHTML=m?m.cues.slice(0,3).map(c=>'<div>'+c+'</div>').join(''):'';
+  const fig=$('p-fig');if(m){fig.style.visibility='visible';animate(fig,m,{near:'#ffffff',far:'rgba(255,255,255,.45)',bell:it.k==='work'?'#ffd166':'#ff9a5c',ground:'rgba(255,255,255,.35)',clock:it.k==='work'?workClock:null});}else{fig.style.visibility='hidden';stopAnim(fig);}
+  $('p-cues').innerHTML=m?(m.calls?'<div class="steps">'+m.calls.map(c=>'<span>'+c[1]+'</span>').join('')+'</div>':'')+m.cues.slice(0,m.calls?2:3).map(c=>'<div>'+c+'</div>').join(''):'';
   const nx=it.next;
   $('p-next').textContent=(!isRest&&nx&&it.k!=='ready')?'Then: '+nameWithSide(nx):'';
   const where=it.circ!=null?'Circuit '+LETTER[it.circ]+' · Round '+it.round+'/'+it.rounds:KIND[it.k];
   $('p-where').textContent=where;PL.where=where;
   announce(it);
   updateTime();
+}
+// Seconds into the current interval, smoothed between timer ticks. Drives the figure during work so it matches the voice and stops on pause.
+function workClock(){const it=PL.seq[PL.i];return Math.max(0,it.dur-PL.left+(PL.running?(performance.now()-PL.last)/1000*SPEED:0));}
+// Which step of a complex the figure is on at t seconds: n = rep number, idx = index into m.calls
+function stepAt(m,t){
+  const tot=m.kf.reduce((a,f)=>a+f[1],0), n=Math.floor(t/tot), tt=t-n*tot;
+  let acc=0,idx=0;const starts=m.kf.map(f=>{const s=acc;acc+=f[1];return s;});
+  m.calls.forEach((c,i)=>{if(starts[c[0]]<=tt+1e-6)idx=i;});
+  return {n,idx};
+}
+function stepCall(it){
+  const m=ALL[it.id];if(!m.calls)return;
+  const st=stepAt(m,Math.max(0,it.dur-PL.left)), key=st.n*100+st.idx;
+  if(key===PL.stepKey)return;PL.stepKey=key;
+  $('p-cues').querySelectorAll('.steps span').forEach((e,i)=>e.classList.toggle('on',i===st.idx));
+  if(settings.cxVoice==='step'&&PL.left>3)say(m.calls[st.idx][1],true);
 }
 function announce(it){
   const nx=it.next;
@@ -659,7 +753,7 @@ function announce(it){
     case 'rest':say('Rest. Next, '+nameWithSide(nx));break;
     case 'round':{
       let t;if(it.newCirc)t='Circuit '+LETTER[it.circ]+' done. Rest '+it.dur+' seconds. Next, circuit '+LETTER[it.circ+1]+'. First up, '+nameWithSide(nx);
-      else{t='Round '+it.round+' done. Rest '+it.dur+' seconds. '+(it.round+1===it.rounds?'Last round. ':'')+'First up, '+nameWithSide(nx);}
+      else{t='Round '+it.round+' done. Rest '+it.dur+' seconds. '+(it.round+1===it.rounds?'Last round. ':'')+(it.up?'The moves step up. ':'')+'First up, '+nameWithSide(nx);}
       say(t);break;}
     case 'cool':say(it.n===1?'Great work. Cool-down. '+nameWithSide(it):nameWithSide(it));break;
   }
@@ -680,6 +774,7 @@ function loop(){
     if(it.k==='work'&&whole===10&&it.dur>=25)beep(660,.12,.25),setTimeout(()=>beep(660,.12,.25),180/SPEED);
     if(whole>=1&&whole<=3)beep(880,.14,.35);
   }
+  if(it.k==='work'&&PL.left>0)stepCall(it);
   if(PL.left<=0){
     if(it.k==='work')beep(520,.5,.4);
     if(PL.i+1>=PL.seq.length){finish(true);return;}
@@ -705,8 +800,7 @@ function finish(complete){
   quitPlayer();
   const doneWork=PL.seq.slice(0,complete?PL.seq.length:PL.i).filter(s=>s.k==='work');
   const ids=[...new Set(doneWork.map(s=>s.id))];
-  const allIds=WK.circuits.flatMap(c=>c.moves);
-  const entry={date:new Date().toISOString(),mins:WK.cfg.mins,secs:Math.round(complete?PL.total:PL.doneSecs),focus:WK.cfg.focus,work:WK.cfg.work,rest:WK.cfg.rest,moves:complete?allIds:ids,complete};
+  const entry={date:new Date().toISOString(),mins:WK.cfg.mins,secs:Math.round(complete?PL.total:PL.doneSecs),focus:WK.cfg.focus,work:WK.cfg.work,rest:WK.cfg.rest,moves:ids,diff:WK.cfg.diff,complete};
   if(entry.secs>=60){const h=store.get('history',[]);h.unshift(entry);store.set('history',h.slice(0,200));}
   if(complete)say('Workout complete. Nice work.');
   $('d-title').textContent=complete?'Workout complete':'Workout saved';
@@ -719,7 +813,7 @@ $('b-start').onclick=startWorkout;
 $('b-done').onclick=()=>show('history');
 
 /* expose for testing */
-window.KB={MOVES,WARM,COOL,ALL,buildWorkout,sequence,fitPlan,fk,setSpeed:s=>SPEED=s,PL,poseAt,makeFig};
+window.KB={MOVES,WARM,COOL,ALL,buildWorkout,sequence,fitPlan,fk,setSpeed:s=>SPEED=s,PL,poseAt,makeFig,swapMove,stepAt,settings};
 renderSetup();
 try{if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('sw.js');}catch(e){}
 </script>

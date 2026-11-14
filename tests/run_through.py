@@ -19,5 +19,30 @@ with sync_playwright() as p:
     pg.click('#b-done'); pg.wait_for_timeout(300); shot('7_history')
     n=pg.evaluate("JSON.parse(localStorage.getItem('kb_history')||'[]').length")
     pg.click('nav >> text=Moves'); pg.click('#m-list .mrow >> nth=4'); pg.wait_for_timeout(500); shot('8_move')
+    # --- complexes: Brutal workout, step chips on screen, voice in both modes
+    pg.evaluate("""()=>{window.SPOKEN=[];const U=window.SpeechSynthesisUtterance;window.speechSynthesis.speak=u=>SPOKEN.push(u.text);}""")
+    pg.click('#sheet-close'); pg.click('nav >> text=Workout'); pg.click('text=20 min'); pg.click('text=Full body'); pg.click('text=Brutal'); pg.click('text=Move by move'); shot('9_setup_brutal')
+    pg.click('#b-build')
+    has=lambda:pg.evaluate("(()=>{const q=KB.sequence(WK).filter(s=>s.k==='work'&&KB.ALL[s.id].calls);return new Set(q.map(s=>s.id)).size>=2&&q.some(s=>s.round===1)})()")
+    for _ in range(40):
+        if has(): break
+        pg.click('#b-reshuffle')
+    shot('10_preview_brutal')
+    def to_complex():
+        pg.evaluate('KB.setSpeed(40)')
+        for _ in range(2000):
+            if pg.evaluate("(()=>{const it=KB.PL.seq[KB.PL.i];return it.k==='work'&&!!KB.ALL[it.id].calls&&KB.PL.left>it.dur-8})()"): break
+            pg.wait_for_timeout(20)
+        pg.evaluate('KB.setSpeed(1);SPOKEN.length=0'); pg.wait_for_timeout(7000)
+        m=pg.evaluate("KB.ALL[KB.PL.seq[KB.PL.i].id]"); words=[c[1] for c in m['calls']]
+        return m['name'],words,pg.evaluate('SPOKEN.slice()'),pg.locator('#p-cues .steps span.on').count()
+    pg.click('#b-start'); pg.wait_for_timeout(500)
+    name1,words1,spoken1,on1=to_complex(); shot('11_complex')
+    pg.evaluate("KB.settings.cxVoice='once'"); pg.click('#b-next'); pg.click('#b-next')
+    name2,words2,spoken2,on2=to_complex()
+    step_ok=len([t for t in spoken1 if t in words1])>=2 and on1==1
+    once_ok=not [t for t in spoken2 if t in words2] and on2==1
+    print('complex, move by move:',name1,'| spoken:',spoken1,'|','ok' if step_ok else 'FAIL')
+    print('complex, name once:',name2,'| spoken:',spoken2,'|','ok' if once_ok else 'FAIL')
     print('history entries:',n,'| JS errors:',errs or 'none','| screenshots in',OUT)
-    b.close(); sys.exit(1 if errs or n<1 else 0)
+    b.close(); sys.exit(1 if errs or n<1 or not step_ok or not once_ok else 0)

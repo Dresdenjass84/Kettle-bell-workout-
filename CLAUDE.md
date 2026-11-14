@@ -10,9 +10,9 @@ A phone-first web app for timed kettlebell circuits. It's for Jass, who trains a
 
 | File | What it is |
 |---|---|
-| `index.html` | The whole app: CSS, markup and JS in one file, about 720 lines |
+| `index.html` | The whole app: CSS, markup and JS in one file, about 800 lines |
 | `manifest.webmanifest` | Settings that make it installable: name, icons, full screen, portrait |
-| `sw.js` | Service worker for offline use. Fetches from the network first and falls back to its cache. Its cache name is `kb-v1` |
+| `sw.js` | Service worker for offline use. Fetches from the network first and falls back to its cache. Its cache name is `kb-v2` |
 | `icon-192.png`, `icon-512.png` | App icons: an orange kettlebell on dark `#101216` |
 | `netlify.toml` | Netlify settings: publish the repo root, no build, never cache `sw.js` |
 | `tests/` | Playwright checks (see Testing) |
@@ -24,8 +24,14 @@ A phone-first web app for timed kettlebell circuits. It's for Jass, who trains a
 - **Work/rest presets:** 30/30, 40/20 (default), 45/15, 50/10, or custom (work 15–120 s, rest 5–90 s, in 5 s steps).
 - **Rest between rounds:** adjustable at 30 / 45 / 60 (default) / 90 / 120 s.
 - **Structure:** circuits of moves repeated for rounds, with a 3-round target. 10 and 15-minute workouts usually come out at 2 rounds.
+- **Difficulty:** Standard / Hard (default) / Brutal. The user found the original workouts too easy and asked for progressive rounds and compound moves.
+  - **Standard:** the same moves every round, no complexes.
+  - **Hard:** each round swaps a move for the next rung of its ladder (for example goblet squat → one-and-a-half squat → goblet thruster), ending on complexes where the ladder reaches one.
+  - **Brutal:** starts one rung up, climbs every round, and can pick complexes as the opening move.
+- **Complexes:** several moves chained without putting the bell down, such as "Clean, squat, press". They take one normal slot.
+- **Voice during complexes:** a setup switch between **Move by move** (default: the voice calls each step in time with the figure) and **Name once** (the complex is only named in the rest before it).
 - **One-sided moves:** each side gets a **full** work interval: left, a normal rest, then right. A one-sided move takes 2 slots in a circuit.
-- **Audio:** beeps **and** voice. 3-2-1 beeps before the end of every interval, a double beep at 10 s left in work intervals of 25 s or more, a "go" tone when work starts, and a lower tone when work ends. During rests the voice says "Rest. Next, X, left side". At round rests it says "Round N done… Last round…" and at circuit changes "Circuit A done…". The voice uses the browser's speech synthesis in en-GB.
+- **Audio:** beeps **and** voice. 3-2-1 beeps before the end of every interval, a double beep at 10 s left in work intervals of 25 s or more, a "go" tone when work starts, and a lower tone when work ends. During rests the voice says "Rest. Next, X, left side". At round rests it says "Round N done… Last round…" and at circuit changes "Circuit A done…". When the next round uses harder moves it adds "The moves step up". The voice uses the browser's speech synthesis in en-GB.
 - **Experience level:** comfortable with the basics, so snatches, get-ups and windmills are included.
 - **History:** saved on the phone in `localStorage`. Moves from the **last 2 sessions** are weighted down (×0.12) for variety.
 - **Moves shown as:** looping stick-figure animations plus 2–3 form cues. The user accepted that the figures show the *shape* of a move, not fine technique.
@@ -43,7 +49,9 @@ A phone-first web app for timed kettlebell circuits. It's for Jass, who trains a
    - **Animation:** `kf:[[pose, seconds], …]` loops through the poses with cosine easing. A duration of 0 jumps straight to the next pose, which the arm circles use to wrap from 360° back to 0°.
    - **Interpolation:** angles are interpolated as plain numbers, so pick values that don't swing the long way round. For example, use 230 rather than −130 when coming from 180, and −180 rather than 180 when coming from −90.
    - **Centring:** `m.cx` comes from `bounds()` and keeps each move centred.
-3. **Poses and the move library:** `MOVES` holds 54 moves. Each has `{id, name, areas[], pat, uni, lvl, bw, cues[3], kf, view, thumb}`.
+3. **Poses and the move library:** `MOVES` holds 75 moves. Each has `{id, name, areas[], pat, uni, lvl, bw, cues[3], kf, view, thumb}`, plus `up` and `calls` where they apply.
+   - **Ladders:** `UPS` maps a move ID to its harder version, which becomes `m.up`. Both ends must have the same `uni` setting, so a ladder never changes the number of slots.
+   - **Complexes:** IDs start with `x_`. `calls:[[keyframe index, word], …]` lists the steps; the first must be at keyframe 0. The word is spoken and highlighted when the figure reaches that keyframe.
    - **areas:** any of `full`, `legs`, `upper`, `core`.
    - **pat:** one of `ballistic`, `squat`, `lunge`, `hinge`, `push`, `pull`, `arms`, `flex`, `antiext`, `rot`, `carry`.
    - Warm-ups are in `WARM` and stretches in `COOL`. Which ones each focus uses is set by `WARM_BY` and `COOL_BY`.
@@ -51,16 +59,18 @@ A phone-first web app for timed kettlebell circuits. It's for Jass, who trains a
    - **Base times:** `BASE[mins]=[warm-up seconds, cool-down seconds]`, plus `READY=10` and `SET=15` (the get-set gap between the warm-up and the circuits).
    - **`fitPlan(M,W,R,RR,maxSlots,allow)`:** searches circuits `c` (1–5), rounds `r` (1–4) and total slots `S`. The circuit time is `D = r·(S·W + (S−c)·R) + (r·c−1)·RR`. The score is `|M−D|·0.5` plus penalties: r≠3, an average of fewer than 4 or more than 6 slots per circuit, and each extra circuit.
    - **Exact length:** whatever is left over (`M−D`) is split between the warm-up and cool-down, then `spread()` divides each across its items. That's what makes the total exact.
-   - **`chooseCircuits`:** fills the slots by working through `TEMPLATE[focus]`, the list of movement patterns for that focus. A one-sided move fits only where 2 slots are left.
-   - **`swapMove`:** swaps a move for another of the same pattern with the same one-sided setting, so the timing doesn't change.
+   - **`chooseCircuits`:** fills the slots by working through `TEMPLATE[focus]`, the list of movement patterns for that focus. A one-sided move fits only where 2 slots are left. Each circuit is `{moves, ladders, rounds}`: `moves[i]` is the round-1 move and `ladders[i]` lists the move for every round.
+   - **`ladderFor(m,rounds,diff,used)`:** builds one slot's ladder by following `up`, skipping any move already used elsewhere in the workout. No move appears in two slots.
+   - **`swapMove`:** swaps a move for another of the same pattern with the same one-sided setting, then rebuilds that slot's ladder, so the timing doesn't change.
    - **`sequence(wk)`:** builds the list of intervals. Each has a kind (`ready|warm|set|work|rest|round|cool`), a duration, a move ID, a side, a circuit, a round and a pointer to what's next.
 5. **Audio:** `initAudio()` must run from a user tap, which is why it's called from Start and Pause/Resume. `beep(freq,dur,vol)` uses Web Audio and `say(text)` uses speech synthesis.
 6. **Setup UI, preview, move sheet, moves library and history.**
 7. **Player:**
    - **Timer:** a 100 ms `setInterval` that advances by the real time elapsed, multiplied by `SPEED`. `SPEED` exists only so tests can fast-forward.
    - **Intervals:** `enter(i)` sets up an interval and `announce(it)` handles its sounds. Beeps fire when the count crosses a whole second.
+   - **Complex steps:** during work the figure runs off `workClock()` (workout time, not wall time), so it pauses with the timer. `stepCall()` highlights the current step and, in move-by-move mode, speaks it. Calls stop in the last 3 seconds.
    - **Finishing:** `finish(complete)` saves the history entry, but only for sessions longer than 60 s.
-8. **Test hook:** `window.KB = {MOVES, WARM, COOL, ALL, buildWorkout, sequence, fitPlan, fk, setSpeed, PL, poseAt, makeFig}`. Keep it, because the tests depend on it.
+8. **Test hook:** `window.KB = {MOVES, WARM, COOL, ALL, buildWorkout, sequence, fitPlan, fk, setSpeed, PL, poseAt, makeFig, swapMove, stepAt, settings}`. Keep it, because the tests depend on it.
 
 ## Deploying
 
@@ -74,9 +84,9 @@ A phone-first web app for timed kettlebell circuits. It's for Jass, who trains a
 You need Python 3 with Playwright (`pip install playwright && playwright install chromium`). If Playwright's own browser is missing or the wrong version, run the scripts with `USE_SYSTEM_CHROME=1` to use the installed Chrome or Chromium instead.
 
 ```bash
-python3 tests/check_timing.py   # every length × focus × interval × round-rest combination: exact length, no repeated moves, no empty circuits
+python3 tests/check_timing.py   # every length × focus × interval × round-rest × difficulty combination: exact length before and after swaps, no repeated moves, ladders keep the one-sided setting
 python3 tests/render_moves.py   # draws every move's keyframes to tests/out/moves.png so you can look at them
-python3 tests/run_through.py    # phone-sized run: setup → preview → swap → play at 60–400× speed → summary → history → moves; fails on JS errors
+python3 tests/run_through.py    # phone-sized run: setup → preview → swap → play at 60–400× speed → summary → history → moves, then a Brutal workout to check complex steps in both voice modes; fails on JS errors
 ```
 
 Look at `moves.png` after any change to poses. A bad angle usually shows up as a figure floating, sinking, or upside down.
@@ -87,6 +97,8 @@ Look at `moves.png` after any change to poses. A bad angle usually shows up as a
 - **10 kg is light for legs:** the library leans on single-leg, tempo and pulse moves to make up for it. A heavier bell would need either a weight setting or no changes at all, since timings don't depend on load.
 - **History:** stays on one device and is lost if Chrome's site data is cleared. There's no export yet.
 - **Voice:** depends on the phone's text-to-speech engine.
+- **Complex voice on the phone:** move-by-move calls were only tested in desktop Chrome with speech stubbed. Android text-to-speech can lag or drop short words; check on the real phone.
+- **Suggested to the user, not built yet:** a finisher block before the cool-down, a "how hard was that?" rating that adjusts the next session, and better figures (fuller body, bell trail, realistic rhythm, new views for the rotational moves).
 - **Ideas the user hasn't asked for yet:**
   - history export/import (JSON)
   - progression tracking
@@ -109,3 +121,4 @@ Look at `moves.png` after any change to poses. A bad angle usually shows up as a
   - A 10-minute workout with 120 s work and 90 s rest crashed, because no plan fitted. `fitPlan` now falls back to smaller circuits.
   - A 45-minute legs workout at 15/5 came out 60 s short, because the move pool ran out of moves. `buildWorkout` now times the circuits it actually filled.
 - **2026-11-14:** Netlify linked to this repo, so pushes to `main` now deploy automatically. The two generator fixes above went live with the first linked deploy.
+- **2026-11-14:** difficulty setting with progressive rounds, 11 harder moves and 10 complexes, and a switch for how the voice handles complexes. Service worker cache bumped to `kb-v2`.
