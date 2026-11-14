@@ -12,13 +12,19 @@
   [headers.values]
     Content-Type = "application/manifest+json"
 
-# Security headers for every file. The page only needs its own files plus Google Fonts.
+# Security headers for every file. The page only loads its own files.
 # 'unsafe-inline' is needed because the app's script and styles live inside index.html;
 # there is no user input or URL data that gets written into the page, so nothing can inject into it.
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "no-referrer"
     Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), bluetooth=(), screen-wake-lock=(self)"
+
+# Font files never change under the same name, so phones can keep them for a year.
+[[headers]]
+  for = "/fonts/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

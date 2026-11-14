@@ -9,5 +9,4 @@ def launch(p):
 def page(b,**kw):
     pg=b.new_page(**kw); errs=[]
     pg.on('pageerror',lambda e:errs.append(str(e)))
-    pg.route('**/fonts.googleapis.com/**',lambda r:r.abort()); pg.route('**/fonts.gstatic.com/**',lambda r:r.abort())
     pg.goto(URL); return pg,errs
