@@ -224,6 +224,8 @@ nav.tabs svg{width:24px;height:24px}
 'use strict';
 /* ================= Storage ================= */
 const store={get(k,d){try{const v=localStorage.getItem('kb_'+k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem('kb_'+k,JSON.stringify(v))}catch(e){}}};
+// Saved history, keeping only well-formed entries so a damaged store can't break the app.
+function hist(){const h=store.get('history',[]);return Array.isArray(h)?h.filter(e=>e&&typeof e==='object'):[];}
 
 /* ================= Figure engine ================= */
 const RAD=Math.PI/180, GROUND=182, CX=100;
@@ -544,7 +546,7 @@ function pickFinisher(focus,recent,not){
   if(!l.length)l=basePool(focus,'std').filter(m=>!not.has(m.id)&&!m.uni); // long workouts can use up the whole list
   return (pick(l,recent)||ALL[FIN_POOL[focus][0]]).id;
 }
-function recentIds(){const h=store.get('history',[]);const s=new Set();h.slice(0,2).forEach(e=>(e.moves||[]).forEach(id=>s.add(id)));return s;}
+function recentIds(){const h=hist();const s=new Set();h.slice(0,2).forEach(e=>(e.moves||[]).forEach(id=>s.add(id)));return s;}
 function pick(list,recent,boost){
   if(!list.length)return null;
   const w=list.map(m=>(recent.has(m.id)?.12:1)*(boost&&boost(m)?2.5:1));const tot=w.reduce((a,b)=>a+b,0);let r=Math.random()*tot;
@@ -712,6 +714,7 @@ document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>show(b.datase
 /* ================= Preview ================= */
 let WK=null;
 const FOCUSNAME={full:'Full body',legs:'Legs',upper:'Upper body',core:'Core'};
+const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const fmt=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
 const fmtMin=s=>{const m=Math.round(s/60);return m+' min';};
 function thumbSvg(m){const s=document.createElementNS(NS,'svg');s.setAttribute('viewBox','0 0 200 190');s.setAttribute('class','thumb');staticFig(s,m,{near:'#e9ebef',farOp:.38,ground:'rgba(255,255,255,.15)'});return s;}
@@ -786,15 +789,17 @@ function renderMoves(){
 
 /* ================= History ================= */
 function renderHistory(){
-  const h=store.get('history',[]);
+  const h=hist();
   const weekAgo=Date.now()-7*864e5;
-  const wkN=h.filter(e=>new Date(e.date).getTime()>weekAgo).length;
-  const mins=Math.round(h.reduce((a,e)=>a+(e.secs||0),0)/60);
+  const wkN=h.filter(e=>e&&new Date(e.date).getTime()>weekAgo).length;
+  const mins=Math.round(h.reduce((a,e)=>a+((e&&+e.secs)||0),0)/60);
   $('h-stats').innerHTML='<div class="stat"><b>'+h.length+'</b><small>Sessions</small></div><div class="stat"><b>'+wkN+'</b><small>This week</small></div><div class="stat"><b>'+mins+'</b><small>Minutes</small></div>';
   const list=$('h-list');
   if(!h.length){list.innerHTML='<div class="empty">No workouts yet. Your finished sessions will show up here.</div>';return;}
-  list.innerHTML=h.map(e=>{const d=new Date(e.date);
-    return '<div class="card hist"><div class="top"><b>'+FOCUSNAME[e.focus]+' · '+fmtMin(e.secs)+(e.complete?'':' <span class="tag">ended early</span>')+(e.rating?' <span class="tag">'+{easy:'too easy',right:'about right',hard:'too hard'}[e.rating]+'</span>':'')+'</b><small>'+d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})+'</small></div><p>'+e.work+'/'+e.rest+' · '+(e.diff?DIFFS.find(d=>d[0]===e.diff)[1]+' · ':'')+(e.moves||[]).map(id=>ALL[id]?ALL[id].name:id).join(', ')+'</p></div>';}).join('');
+  // History comes from storage, so treat every field as untrusted: escape it and skip anything malformed.
+  const RATE={easy:'too easy',right:'about right',hard:'too hard'}, dn=v=>(DIFFS.find(d=>d[0]===v)||[])[1];
+  list.innerHTML=h.filter(e=>e&&typeof e==='object').map(e=>{const d=new Date(e.date);
+    return '<div class="card hist"><div class="top"><b>'+esc(FOCUSNAME[e.focus]||'Workout')+' · '+esc(fmtMin(+e.secs||0))+(e.complete?'':' <span class="tag">ended early</span>')+(RATE[e.rating]?' <span class="tag">'+RATE[e.rating]+'</span>':'')+'</b><small>'+(isNaN(d)?'':d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}))+'</small></div><p>'+esc(e.work)+'/'+esc(e.rest)+' · '+(dn(e.diff)?dn(e.diff)+' · ':'')+(Array.isArray(e.moves)?e.moves:[]).map(id=>esc(ALL[id]?ALL[id].name:id)).join(', ')+'</p></div>';}).join('');
 }
 $('b-clear').onclick=()=>{
   openSheet('<h3>Clear history?</h3><p class="sub">This deletes every saved workout on this phone. Move variety will start fresh.</p><div class="row"><button class="btn sec" id="cx">Cancel</button><button class="btn" id="cy">Clear</button></div>');
@@ -910,13 +915,13 @@ function finish(complete){
   const doneWork=PL.seq.slice(0,complete?PL.seq.length:PL.i).filter(s=>s.k==='work'||s.k==='fin');
   const ids=[...new Set(doneWork.map(s=>s.id))];
   const entry={date:new Date().toISOString(),mins:WK.cfg.mins,secs:Math.round(complete?PL.total:PL.doneSecs),focus:WK.cfg.focus,work:WK.cfg.work,rest:WK.cfg.rest,moves:ids,diff:WK.cfg.diff,complete};
-  PL.entry=null;if(entry.secs>=60){const h=store.get('history',[]);h.unshift(entry);store.set('history',h.slice(0,200));PL.entry=entry;}
+  PL.entry=null;if(entry.secs>=60){const h=hist();h.unshift(entry);store.set('history',h.slice(0,200));PL.entry=entry;}
   setupRating(complete&&!!PL.entry);
   if(complete)say('Workout complete. Nice work.');
   $('d-title').textContent=complete?'Workout complete':'Workout saved';
   $('d-sub').textContent=FOCUSNAME[WK.cfg.focus]+' · '+new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
   $('d-stats').innerHTML='<div class="stat"><b>'+fmt(entry.secs)+'</b><small>Time</small></div><div class="stat"><b>'+doneWork.length+'</b><small>Work sets</small></div><div class="stat"><b>'+Math.round(doneWork.reduce((a,s)=>a+s.dur,0)/60)+'</b><small>Work min</small></div>';
-  $('d-moves').innerHTML=(entry.moves.length?entry.moves:['—']).map(id=>'<div class="simple"><span>'+(ALL[id]?ALL[id].name:id)+'</span><span>'+(ALL[id]&&ALL[id].uni?'L + R':'')+'</span></div>').join('');
+  $('d-moves').innerHTML=(entry.moves.length?entry.moves:['—']).map(id=>'<div class="simple"><span>'+esc(ALL[id]?ALL[id].name:id)+'</span><span>'+(ALL[id]&&ALL[id].uni?'L + R':'')+'</span></div>').join('');
   show('done');
 }
 /* ================= "How hard was that?" =================
@@ -940,7 +945,7 @@ function setupRating(show){
   btns.forEach(b=>b.onclick=()=>{
     if(before){Object.assign(settings,before);before=null;}
     btns.forEach(x=>x.classList.toggle('on',x===b));
-    const r=b.dataset.r;const h=store.get('history',[]);if(h[0]&&PL.entry&&h[0].date===PL.entry.date){h[0].rating=r;store.set('history',h);}
+    const r=b.dataset.r;const h=hist();if(h[0]&&PL.entry&&h[0].date===PL.entry.date){h[0].rating=r;store.set('history',h);}
     if(r==='right'){$('d-rate-msg').textContent='Good. Next time stays the same.';saveSettings();return;}
     const n=nudge(r==='easy'?1:-1);
     if(!n){$('d-rate-msg').textContent=r==='easy'?'Everything is already at its hardest. A heavier bell is the next step.':'Everything is already at its easiest. Try a shorter workout.';return;}
