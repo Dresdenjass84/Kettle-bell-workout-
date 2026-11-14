@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#101216;--card:#1a1d23;--card2:#22262e;--line:#2e333d;--tx:#f3f4f6;--tx2:#a7adb8;--tx3:#6d7480;--acc:#ff7a3d;--acc2:#ffb08a;--work:#c2410c;--rest:#0f766e;--warm:#4338ca;--ready:#a16207;--ok:#34d399;--r:14px}
+:root{--bg:#101216;--card:#1a1d23;--card2:#22262e;--line:#2e333d;--tx:#f3f4f6;--tx2:#a7adb8;--tx3:#6d7480;--acc:#ff7a3d;--acc2:#ffb08a;--work:#c2410c;--fin:#b91c1c;--rest:#0f766e;--warm:#4338ca;--ready:#a16207;--ok:#34d399;--r:14px}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--tx);font-family:Barlow,system-ui,sans-serif;font-size:17px;line-height:1.45}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
@@ -65,7 +65,7 @@ nav.tabs svg{width:24px;height:24px}
 /* player */
 #player{position:fixed;inset:0;display:none;flex-direction:column;z-index:10;transition:background .35s;background:var(--work)}
 #player.show{display:flex}
-#player.k-work{background:var(--work)}#player.k-rest,#player.k-round,#player.k-set{background:var(--rest)}#player.k-warm,#player.k-cool{background:var(--warm)}#player.k-ready{background:var(--ready)}
+#player.k-work{background:var(--work)}#player.k-fin{background:var(--fin)}#player.k-finrest,#player.k-finset{background:var(--rest)}#player.k-rest,#player.k-round,#player.k-set{background:var(--rest)}#player.k-warm,#player.k-cool{background:var(--warm)}#player.k-ready{background:var(--ready)}
 .p-top{padding:14px 16px 0;padding-top:max(14px,env(safe-area-inset-top))}
 .p-bar{height:6px;background:#0003;border-radius:3px;overflow:hidden}
 .p-bar i{display:block;height:100%;background:#fffd;width:0}
@@ -101,6 +101,8 @@ nav.tabs svg{width:24px;height:24px}
 .empty{color:var(--tx3);text-align:center;padding:30px 10px}
 .hide{display:none!important}
 .link{color:var(--tx3);font-size:14px;text-decoration:underline;margin-top:18px;display:block;text-align:center;width:100%}
+.hint .link{display:inline;margin:0;width:auto;color:var(--acc2);font-size:inherit}
+.rate{margin-top:14px;padding:14px}.rate b{display:block;font-size:17px;margin-bottom:10px}.rate .row .chip{padding:0 6px;font-size:15px}
 .done-ico{width:72px;height:72px;border-radius:50%;background:var(--ok);color:#06281c;display:flex;align-items:center;justify-content:center;margin:30px auto 10px}
 </style>
 </head>
@@ -119,6 +121,10 @@ nav.tabs svg{width:24px;height:24px}
   <div class="lbl">Difficulty</div>
   <div class="chips" id="c-diff"></div>
   <p class="hint" id="diff-hint"></p>
+
+  <div class="lbl">Finisher</div>
+  <div class="chips" id="c-fin"></div>
+  <p class="hint">All-out 20 seconds on, 10 off, just before the cool-down: 2 minutes in short workouts, up to 4 in long ones. It comes out of circuit time, so the total length doesn't change. Skipped in 10-minute workouts, which don't have room for it.</p>
 
   <div class="lbl">Work / rest</div>
   <div class="chips" id="c-int"></div>
@@ -174,6 +180,11 @@ nav.tabs svg{width:24px;height:24px}
   <h1 style="text-align:center" id="d-title">Workout complete</h1>
   <p class="sub" style="text-align:center" id="d-sub"></p>
   <div class="stats" id="d-stats"></div>
+  <div class="card rate" id="d-rate">
+    <b>How hard was that?</b>
+    <div class="row" id="d-rate-btns"><button class="chip" data-r="easy">Too easy</button><button class="chip" data-r="right">About right</button><button class="chip" data-r="hard">Too hard</button></div>
+    <p class="hint" id="d-rate-msg"></p>
+  </div>
   <h2>Moves done</h2>
   <div class="card" id="d-moves" style="padding:6px 12px"></div>
   <button class="btn" id="b-done">Done</button>
@@ -523,6 +534,16 @@ const COREPATS=['flex','antiext','rot','carry'];
 const matches=(m,tok)=>tok==='core'?COREPATS.includes(m.pat):m.pat===tok;
 const BASE={10:[120,60],15:[150,90],20:[180,120],30:[240,150],45:[300,180]};
 const READY=10, SET=15;
+// Finisher: all-out 20 s on / 10 s off before the cool-down. FIN_N = rounds per workout length; FIN_SET = the gap before it.
+const FIN_W=20, FIN_R=10, FIN_SET=20, FIN_N={10:0,15:4,20:6,30:8,45:8}; // none at 10 min: no room for it and 2 rounds of 3 moves
+const finSecs=mins=>!FIN_N[mins]?0:FIN_SET+FIN_N[mins]*FIN_W+(FIN_N[mins]-1)*FIN_R;
+// One high-output move per focus; one-sided moves alternate sides each round.
+const FIN_POOL={full:['swing2','burpee','thruster','snatch','h2h','jumpsquat'],legs:['jumpsquat','swing2','thruster','squat15','h2h'],upper:['pushup','highpull','pushpress','cleanpress','swing2'],core:['climbers','swing2','h2h','burpee']};
+function pickFinisher(focus,recent,not){
+  let l=FIN_POOL[focus].filter(id=>!not.has(id)).map(id=>ALL[id]);
+  if(!l.length)l=basePool(focus,'std').filter(m=>!not.has(m.id)&&!m.uni); // long workouts can use up the whole list
+  return (pick(l,recent)||ALL[FIN_POOL[focus][0]]).id;
+}
 function recentIds(){const h=store.get('history',[]);const s=new Set();h.slice(0,2).forEach(e=>(e.moves||[]).forEach(id=>s.add(id)));return s;}
 function pick(list,recent,boost){
   if(!list.length)return null;
@@ -573,8 +594,10 @@ function chooseCircuits(plan,focus,recent,diff){
 }
 function buildWorkout(cfg){
   if(!cfg.diff)cfg.diff='hard';
+  if(cfg.fin==null)cfg.fin=true;
+  const useFin=cfg.fin&&FIN_N[cfg.mins]>0;
   const T=cfg.mins*60;let [w,c]=BASE[cfg.mins];
-  const M=T-w-c-SET-READY;
+  const M=T-w-c-SET-READY-(useFin?finSecs(cfg.mins):0);
   const pool=MOVES.filter(m=>cfg.focus==='full'||m.areas.includes(cfg.focus));
   const plan=fitPlan(M,cfg.work,cfg.rest,cfg.rr,pool.reduce((a,m)=>a+(m.uni?2:1),0),Math.min(60,w-90+c-45));
   const recent=recentIds();
@@ -592,12 +615,13 @@ function buildWorkout(cfg){
   const cl=COOL_BY[cfg.focus], nC=Math.max(2,Math.round(c/30));const cool=[];let i=0;
   while(cool.length<nC){const m=ALL[cl[i%cl.length]];i++;if(m.uni){if(cool.length+2>nC&&cool.length>0)continue;cool.push({id:m.id,side:'L',dur:0},{id:m.id,side:'R',dur:0});}else cool.push({id:m.id,dur:0});if(i>40)break;}
   spread(cool,c);
-  return {cfg,warm,circuits,cool,plan};
+  const fin=useFin?{id:pickFinisher(cfg.focus,recent,new Set(circuits.flatMap(cc=>cc.ladders.flat()))),n:FIN_N[cfg.mins]}:null;
+  return {cfg,warm,circuits,cool,plan,fin};
 }
 function spread(arr,total){const b=Math.floor(total/arr.length);let rem=total-b*arr.length;arr.forEach(x=>{x.dur=b+(rem>0?1:0);rem--;});}
 function swapMove(wk,ci,idx){
   const cc=wk.circuits[ci], cur=ALL[cc.moves[idx]];
-  const used=new Set(wk.circuits.flatMap(c=>c.ladders.flat()));
+  const used=new Set(wk.circuits.flatMap(c=>c.ladders.flat()));if(wk.fin)used.add(wk.fin.id);
   const pool=basePool(wk.cfg.focus,wk.cfg.diff).filter(m=>!used.has(m.id)&&m.uni===cur.uni);
   let cand=pool.filter(m=>m.pat===cur.pat||(COREPATS.includes(cur.pat)&&COREPATS.includes(m.pat)));
   if(!cand.length)cand=pool;
@@ -622,6 +646,14 @@ function sequence(wk){
       });
     }
   });
+  if(wk.fin){
+    seq.push({k:'finset',dur:FIN_SET});
+    const uni=ALL[wk.fin.id].uni;
+    for(let i=1;i<=wk.fin.n;i++){
+      seq.push({k:'fin',dur:FIN_W,id:wk.fin.id,side:uni?(i%2?'L':'R'):undefined,n:i,of:wk.fin.n});
+      if(i<wk.fin.n)seq.push({k:'finrest',dur:FIN_R,n:i,of:wk.fin.n});
+    }
+  }
   wk.cool.forEach((x,i)=>seq.push({k:'cool',dur:x.dur,id:x.id,side:x.side,n:i+1,of:wk.cool.length}));
   // fill in "next" pointers
   for(let i=0;i<seq.length;i++){seq[i].next=seq.slice(i+1).find(s=>s.id)||null;}
@@ -648,7 +680,7 @@ function say(text,quick){
 
 /* ================= Settings + setup UI ================= */
 const PRESETS=[[30,30,'30 / 30'],[40,20,'40 / 20'],[45,15,'45 / 15'],[50,10,'50 / 10'],['c','c','Custom']];
-const settings=Object.assign({mins:20,focus:'full',preset:1,work:40,rest:20,rr:60,voice:true,beep:true,diff:'hard',cxVoice:'step'},store.get('settings',{}));
+const settings=Object.assign({mins:20,focus:'full',preset:1,work:40,rest:20,rr:60,voice:true,beep:true,diff:'hard',cxVoice:'step',fin:true},store.get('settings',{}));
 const $=id=>document.getElementById(id);
 function saveSettings(){store.set('settings',settings);}
 function chipRow(host,items,isOn,onTap,cls){host.innerHTML='';items.forEach((it,i)=>{const b=document.createElement('button');b.className='chip'+(isOn(it,i)?' on':'');b.textContent=it.label;b.onclick=()=>{onTap(it,i);};host.appendChild(b);});}
@@ -662,6 +694,7 @@ function renderSetup(){
   $('t-voice').classList.toggle('on',settings.voice);$('t-beep').classList.toggle('on',settings.beep);
   chipRow($('c-diff'),DIFFS.map(([v,label])=>({v,label})),it=>it.v===settings.diff,it=>{settings.diff=it.v;saveSettings();renderSetup();});
   $('diff-hint').textContent={std:'The same moves every round.',hard:'Each round swaps in a harder version of the move, ending on complexes where it can.',max:'Starts on the harder versions, climbs every round, and can open with complexes.'}[settings.diff];
+  chipRow($('c-fin'),[[true,'On'],[false,'Off']].map(([v,label])=>({v,label})),it=>it.v===settings.fin,it=>{settings.fin=it.v;saveSettings();renderSetup();});
   chipRow($('c-cxv'),[['step','Move by move'],['once','Name once']].map(([v,label])=>({v,label})),it=>it.v===settings.cxVoice,it=>{settings.cxVoice=it.v;saveSettings();renderSetup();});
   $('cxv-hint').textContent=!settings.voice?'Voice is off, so nothing is spoken.':settings.cxVoice==='step'?'A complex chains moves without putting the bell down. The voice calls each move in time with the figure, for example “Clean… squat… press”.':'A complex chains moves without putting the bell down. The voice names it once during the rest before.';
 }
@@ -686,7 +719,7 @@ const SWAPICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke
 function renderPreview(){
   const wk=WK, c=wk.cfg;
   $('pv-title').textContent=c.mins+' min · '+FOCUSNAME[c.focus];
-  $('pv-pills').innerHTML=[c.work+'s work / '+c.rest+'s rest',c.rr+'s between rounds',wk.circuits.length+(wk.circuits.length>1?' circuits':' circuit')+' × '+wk.plan.r+' rounds',DIFFS.find(d=>d[0]===c.diff)[1]].map(t=>'<span class="pill">'+t+'</span>').join('');
+  $('pv-pills').innerHTML=[c.work+'s work / '+c.rest+'s rest',c.rr+'s between rounds',wk.circuits.length+(wk.circuits.length>1?' circuits':' circuit')+' × '+wk.plan.r+(wk.plan.r===1?' round':' rounds'),DIFFS.find(d=>d[0]===c.diff)[1]].concat(wk.fin?['Finisher']:[]).map(t=>'<span class="pill">'+t+'</span>').join('');
   const body=$('pv-body');body.innerHTML='';
   const wsum=wk.warm.reduce((a,x)=>a+x.dur,0)+READY;
   body.insertAdjacentHTML('beforeend','<div class="sec-h"><h2>Warm-up</h2><span>'+fmt(wsum)+'</span></div>');
@@ -695,7 +728,7 @@ function renderPreview(){
   wk.circuits.forEach((cc,ci)=>{
     const slots=cc.moves.reduce((a,id)=>a+(ALL[id].uni?2:1),0);
     const dur=cc.rounds*(slots*c.work+(slots-1)*c.rest);
-    body.insertAdjacentHTML('beforeend','<div class="sec-h"><h2>Circuit '+LETTER[ci]+' · '+cc.rounds+' rounds</h2><span>~'+fmtMin(dur)+'</span></div>');
+    body.insertAdjacentHTML('beforeend','<div class="sec-h"><h2>Circuit '+LETTER[ci]+' · '+cc.rounds+(cc.rounds===1?' round':' rounds')+'</h2><span>~'+fmtMin(dur)+'</span></div>');
     const card=document.createElement('div');card.className='card';card.style.padding='2px 6px';
     cc.moves.forEach((id,idx)=>{
       const m=ALL[id];const row=document.createElement('div');row.className='mrow';
@@ -709,6 +742,15 @@ function renderPreview(){
     });
     body.appendChild(card);
   });
+  if(wk.fin){
+    const fm=ALL[wk.fin.id];
+    body.insertAdjacentHTML('beforeend','<div class="sec-h"><h2>Finisher · '+wk.fin.n+' × '+FIN_W+'s</h2><span>'+fmt(finSecs(c.mins)-FIN_SET)+'</span></div>');
+    const fc=document.createElement('div');fc.className='card';fc.style.padding='2px 6px';
+    const row=document.createElement('div');row.className='mrow';row.appendChild(thumbSvg(fm));
+    const nm=document.createElement('div');nm.className='nm';nm.innerHTML='<b>'+fm.name+'</b><small>'+FIN_W+'s all out, '+FIN_R+'s rest'+(fm.uni?', sides alternate':'')+'</small>';nm.onclick=()=>openMove(fm);row.appendChild(nm);
+    const sw=document.createElement('button');sw.className='swap';sw.setAttribute('aria-label','Swap '+fm.name);sw.innerHTML=SWAPICO;sw.onclick=()=>{wk.fin.id=pickFinisher(c.focus,recentIds(),new Set([wk.fin.id,...wk.circuits.flatMap(x=>x.ladders.flat())]));renderPreview();};
+    row.appendChild(sw);fc.appendChild(row);body.appendChild(fc);
+  }
   const csum=wk.cool.reduce((a,x)=>a+x.dur,0);
   body.insertAdjacentHTML('beforeend','<div class="sec-h"><h2>Cool-down</h2><span>'+fmt(csum)+'</span></div>');
   const cc2=document.createElement('div');cc2.className='card';cc2.style.padding='4px 12px';
@@ -716,7 +758,7 @@ function renderPreview(){
   const total=sequence(wk).reduce((a,s)=>a+s.dur,0);
   body.insertAdjacentHTML('beforeend','<p class="sub" style="margin-top:14px;text-align:center">Total '+fmt(total)+'. Tap a move to see how it\'s done, or swap it.</p>');
 }
-$('b-build').onclick=()=>{WK=buildWorkout({mins:settings.mins,focus:settings.focus,work:settings.work,rest:settings.rest,rr:settings.rr,diff:settings.diff});renderPreview();show('preview');};
+$('b-build').onclick=()=>{WK=buildWorkout({mins:settings.mins,focus:settings.focus,work:settings.work,rest:settings.rest,rr:settings.rr,diff:settings.diff,fin:settings.fin});renderPreview();show('preview');};
 $('b-reshuffle').onclick=()=>{WK=buildWorkout(Object.assign({},WK.cfg));renderPreview();window.scrollTo(0,0);};
 $('b-back').onclick=()=>show('setup');
 
@@ -752,7 +794,7 @@ function renderHistory(){
   const list=$('h-list');
   if(!h.length){list.innerHTML='<div class="empty">No workouts yet. Your finished sessions will show up here.</div>';return;}
   list.innerHTML=h.map(e=>{const d=new Date(e.date);
-    return '<div class="card hist"><div class="top"><b>'+FOCUSNAME[e.focus]+' · '+fmtMin(e.secs)+(e.complete?'':' <span class="tag">ended early</span>')+'</b><small>'+d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})+'</small></div><p>'+e.work+'/'+e.rest+' · '+(e.diff?DIFFS.find(d=>d[0]===e.diff)[1]+' · ':'')+(e.moves||[]).map(id=>ALL[id]?ALL[id].name:id).join(', ')+'</p></div>';}).join('');
+    return '<div class="card hist"><div class="top"><b>'+FOCUSNAME[e.focus]+' · '+fmtMin(e.secs)+(e.complete?'':' <span class="tag">ended early</span>')+(e.rating?' <span class="tag">'+{easy:'too easy',right:'about right',hard:'too hard'}[e.rating]+'</span>':'')+'</b><small>'+d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})+'</small></div><p>'+e.work+'/'+e.rest+' · '+(e.diff?DIFFS.find(d=>d[0]===e.diff)[1]+' · ':'')+(e.moves||[]).map(id=>ALL[id]?ALL[id].name:id).join(', ')+'</p></div>';}).join('');
 }
 $('b-clear').onclick=()=>{
   openSheet('<h3>Clear history?</h3><p class="sub">This deletes every saved workout on this phone. Move variety will start fresh.</p><div class="row"><button class="btn sec" id="cx">Cancel</button><button class="btn" id="cy">Clear</button></div>');
@@ -761,7 +803,7 @@ $('b-clear').onclick=()=>{
 
 /* ================= Player ================= */
 const PL={seq:[],i:0,left:0,running:false,last:0,timer:0,doneSecs:0,wake:null,lastWhole:null};
-const KIND={ready:'Get ready',warm:'Warm-up',work:'Work',rest:'Rest',round:'Round rest',set:'Get set',cool:'Cool-down'};
+const KIND={ready:'Get ready',warm:'Warm-up',work:'Work',rest:'Rest',round:'Round rest',set:'Get set',cool:'Cool-down',finset:'Finisher next',fin:'Finisher',finrest:'Rest'};
 let SPEED=1;
 async function wakeOn(){try{if('wakeLock' in navigator){PL.wake=await navigator.wakeLock.request('screen');}}catch(e){}}
 function wakeOff(){try{if(PL.wake){PL.wake.release();PL.wake=null;}}catch(e){}}
@@ -777,17 +819,17 @@ function startWorkout(){
 function enter(i){
   PL.i=i;const it=PL.seq[i];PL.left=it.dur;PL.lastWhole=Math.ceil(it.dur);PL.stepKey=-1;
   const pl=$('player');pl.className='show k-'+it.k;
-  $('p-phase').textContent=KIND[it.k]+(it.k==='warm'||it.k==='cool'?' '+it.n+'/'+it.of:'');
+  $('p-phase').textContent=KIND[it.k]+(it.k==='warm'||it.k==='cool'||it.k==='fin'?' '+it.n+'/'+it.of:'');
   // what to show: the move for work/warm/cool, the upcoming move for rests
   const showIt=it.id?it:it.next;const m=showIt?ALL[showIt.id]:null;
   const isRest=!it.id;
   $('p-name').textContent=m?(isRest?'Next: ':'')+m.name:'';
   const sd=$('p-side');if(showIt&&showIt.side){sd.textContent=showIt.side==='L'?'LEFT':'RIGHT';sd.classList.remove('hide');}else sd.classList.add('hide');
-  const fig=$('p-fig');if(m){fig.style.visibility='visible';animate(fig,m,{near:'#ffffff',bell:it.k==='work'?'#ffd166':'#ff9a5c',ground:'rgba(255,255,255,.35)',clock:it.k==='work'?workClock:null,trail:1});}else{fig.style.visibility='hidden';stopAnim(fig);}
+  const fig=$('p-fig');if(m){fig.style.visibility='visible';animate(fig,m,{near:'#ffffff',bell:it.k==='work'||it.k==='fin'?'#ffd166':'#ff9a5c',ground:'rgba(255,255,255,.35)',clock:it.k==='work'?workClock:null,trail:1});}else{fig.style.visibility='hidden';stopAnim(fig);}
   $('p-cues').innerHTML=m?(m.calls?'<div class="steps">'+m.calls.map(c=>'<span>'+c[1]+'</span>').join('')+'</div>':'')+m.cues.slice(0,m.calls?2:3).map(c=>'<div>'+c+'</div>').join(''):'';
   const nx=it.next;
   $('p-next').textContent=(!isRest&&nx&&it.k!=='ready')?'Then: '+nameWithSide(nx):'';
-  const where=it.circ!=null?'Circuit '+LETTER[it.circ]+' · Round '+it.round+'/'+it.rounds:KIND[it.k];
+  const where=it.circ!=null?'Circuit '+LETTER[it.circ]+' · Round '+it.round+'/'+it.rounds:it.k==='fin'||it.k==='finrest'?'Finisher':KIND[it.k];
   $('p-where').textContent=where;PL.where=where;
   announce(it);
   updateTime();
@@ -814,7 +856,9 @@ function announce(it){
     case 'ready':say('Get ready. First up, '+nameWithSide(it));break;
     case 'warm':if(it.n>1)say(nameWithSide(it));break;
     case 'set':say('Warm-up done. Circuit A. First up, '+nameWithSide(nx));break;
-    case 'work':beep(1175,.45,.4);break;
+    case 'work':case 'fin':beep(1175,.45,.4);break;
+    case 'finset':say('Finisher. '+nx.of+' rounds of '+FIN_W+' seconds, all out. '+nameWithSide(nx));break;
+    case 'finrest':say(it.n===it.of-1?'Last one':'Rest');break;
     case 'rest':say('Rest. Next, '+nameWithSide(nx));break;
     case 'round':{
       let t;if(it.newCirc)t='Circuit '+LETTER[it.circ]+' done. Rest '+it.dur+' seconds. Next, circuit '+LETTER[it.circ+1]+'. First up, '+nameWithSide(nx);
@@ -841,7 +885,7 @@ function loop(){
   }
   if(it.k==='work'&&PL.left>0)stepCall(it);
   if(PL.left<=0){
-    if(it.k==='work')beep(520,.5,.4);
+    if(it.k==='work'||it.k==='fin')beep(520,.5,.4);
     if(PL.i+1>=PL.seq.length){finish(true);return;}
     const carry=PL.left;enter(PL.i+1);PL.left+=carry;
   }
@@ -863,22 +907,53 @@ $('b-end').onclick=()=>{
 function quitPlayer(){pause();wakeOff();stopAnim($('p-fig'));$('player').classList.remove('show');document.body.style.overflow='';}
 function finish(complete){
   quitPlayer();
-  const doneWork=PL.seq.slice(0,complete?PL.seq.length:PL.i).filter(s=>s.k==='work');
+  const doneWork=PL.seq.slice(0,complete?PL.seq.length:PL.i).filter(s=>s.k==='work'||s.k==='fin');
   const ids=[...new Set(doneWork.map(s=>s.id))];
   const entry={date:new Date().toISOString(),mins:WK.cfg.mins,secs:Math.round(complete?PL.total:PL.doneSecs),focus:WK.cfg.focus,work:WK.cfg.work,rest:WK.cfg.rest,moves:ids,diff:WK.cfg.diff,complete};
-  if(entry.secs>=60){const h=store.get('history',[]);h.unshift(entry);store.set('history',h.slice(0,200));}
+  PL.entry=null;if(entry.secs>=60){const h=store.get('history',[]);h.unshift(entry);store.set('history',h.slice(0,200));PL.entry=entry;}
+  setupRating(complete&&!!PL.entry);
   if(complete)say('Workout complete. Nice work.');
   $('d-title').textContent=complete?'Workout complete':'Workout saved';
   $('d-sub').textContent=FOCUSNAME[WK.cfg.focus]+' · '+new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
-  $('d-stats').innerHTML='<div class="stat"><b>'+fmt(entry.secs)+'</b><small>Time</small></div><div class="stat"><b>'+doneWork.length+'</b><small>Work sets</small></div><div class="stat"><b>'+Math.round(doneWork.length*WK.cfg.work/60)+'</b><small>Work min</small></div>';
+  $('d-stats').innerHTML='<div class="stat"><b>'+fmt(entry.secs)+'</b><small>Time</small></div><div class="stat"><b>'+doneWork.length+'</b><small>Work sets</small></div><div class="stat"><b>'+Math.round(doneWork.reduce((a,s)=>a+s.dur,0)/60)+'</b><small>Work min</small></div>';
   $('d-moves').innerHTML=(entry.moves.length?entry.moves:['—']).map(id=>'<div class="simple"><span>'+(ALL[id]?ALL[id].name:id)+'</span><span>'+(ALL[id]&&ALL[id].uni?'L + R':'')+'</span></div>').join('');
   show('done');
+}
+/* ================= "How hard was that?" =================
+   One answer moves one setting one step for next time. Too easy: difficulty first (harder moves),
+   then work/rest, then shorter round rests. Too hard: the same levers in reverse order. */
+const RR_STEPS=[120,90,60,45,30], DIFF_STEPS=['std','hard','max'], PRESET_STEPS=[0,1,2,3];
+function nudge(dir){
+  const s=Object.assign({},settings), up=dir>0;
+  const levers=[
+    ['diff',()=>{const i=DIFF_STEPS.indexOf(s.diff)+dir;if(i<0||i>=DIFF_STEPS.length)return null;s.diff=DIFF_STEPS[i];return 'Difficulty: '+DIFFS.find(d=>d[0]===s.diff)[1];}],
+    ['preset',()=>{if(PRESETS[s.preset][0]==='c')return null;const i=PRESET_STEPS.indexOf(s.preset)+dir;if(i<0||i>=PRESET_STEPS.length)return null;s.preset=i;s.work=PRESETS[i][0];s.rest=PRESETS[i][1];return 'Work / rest: '+PRESETS[i][2];}],
+    ['rr',()=>{let i=RR_STEPS.indexOf(s.rr);if(i<0)return null;i+=dir;if(i<0||i>=RR_STEPS.length)return null;s.rr=RR_STEPS[i];return 'Rest between rounds: '+s.rr+'s';}]
+  ];
+  for(const [,f] of (up?levers:levers.slice().reverse())){const msg=f();if(msg)return {s,msg};}
+  return null;
+}
+function setupRating(show){
+  $('d-rate').classList.toggle('hide',!show);$('d-rate-msg').textContent='';
+  const btns=[...document.querySelectorAll('#d-rate-btns button')];btns.forEach(b=>b.classList.remove('on'));
+  let before=null;
+  btns.forEach(b=>b.onclick=()=>{
+    if(before){Object.assign(settings,before);before=null;}
+    btns.forEach(x=>x.classList.toggle('on',x===b));
+    const r=b.dataset.r;const h=store.get('history',[]);if(h[0]&&PL.entry&&h[0].date===PL.entry.date){h[0].rating=r;store.set('history',h);}
+    if(r==='right'){$('d-rate-msg').textContent='Good. Next time stays the same.';saveSettings();return;}
+    const n=nudge(r==='easy'?1:-1);
+    if(!n){$('d-rate-msg').textContent=r==='easy'?'Everything is already at its hardest. A heavier bell is the next step.':'Everything is already at its easiest. Try a shorter workout.';return;}
+    before=Object.assign({},settings);Object.assign(settings,n.s);saveSettings();
+    $('d-rate-msg').innerHTML='Next time: '+n.msg+'. <button class="link" id="d-undo">Undo</button>';
+    $('d-undo').onclick=()=>{Object.assign(settings,before);before=null;saveSettings();btns.forEach(x=>x.classList.remove('on'));$('d-rate-msg').textContent='Settings put back.';};
+  });
 }
 $('b-start').onclick=startWorkout;
 $('b-done').onclick=()=>show('history');
 
 /* expose for testing */
-window.KB={MOVES,WARM,COOL,ALL,buildWorkout,sequence,fitPlan,fk,setSpeed:s=>SPEED=s,PL,poseAt,makeFig,swapMove,stepAt,settings};
+window.KB={MOVES,WARM,COOL,ALL,buildWorkout,sequence,fitPlan,fk,setSpeed:s=>SPEED=s,PL,poseAt,makeFig,swapMove,stepAt,settings,nudge};
 renderSetup();
 try{if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('sw.js');}catch(e){}
 </script>
