@@ -1,6 +1,6 @@
 # Kettlebell Timer: handover for Claude Code
 
-A phone-first web app for timed kettlebell circuits. It's for Jass, who trains at home with **one 10 kg kettlebell**, aiming to **build muscle and lose fat**. It's built as a single static page with no framework, no build step and no backend.
+A phone-first web app for timed kettlebell circuits. It's for Jass, who trains at home with a **10 kg kettlebell**, a **16 kg kettlebell on the way**, and a **chair** (no pull-up bar), aiming to **build muscle and lose fat**. It's built as a single static page with no framework, no build step and no backend.
 
 - **Live site:** https://jass-kettlebell-timer.netlify.app (Netlify site `jass-kettlebell-timer`, site ID `43e712c6-151f-4f07-b390-dfb02e3588cd`)
 - **Used on:** an Android phone in Chrome, installed to the home screen, propped on the floor during workouts.
@@ -10,9 +10,9 @@ A phone-first web app for timed kettlebell circuits. It's for Jass, who trains a
 
 | File | What it is |
 |---|---|
-| `index.html` | The whole app: CSS, markup and JS in one file, about 930 lines |
+| `index.html` | The whole app: CSS, markup and JS in one file, about 1,000 lines |
 | `manifest.webmanifest` | Settings that make it installable: name, icons, full screen, portrait |
-| `sw.js` | Service worker for offline use. Fetches from the network first and falls back to its cache. Its cache name is `kb-v6`. It also precaches the font files, so the app looks right offline |
+| `sw.js` | Service worker for offline use. Fetches from the network first and falls back to its cache. Its cache name is `kb-v7`. It also precaches the font files, so the app looks right offline |
 | `fonts/` | Self-hosted Barlow and Barlow Condensed (Latin subset, woff2), with the font licence in `OFL.txt` |
 | `icon-192.png`, `icon-512.png` | App icons: an orange kettlebell on dark `#101216` |
 | `netlify.toml` | Netlify settings: publish the repo root, no build, never cache `sw.js`, and security headers (CSP, nosniff, no referrer, permissions policy) for every file, and a one-year cache for `fonts/` |
@@ -22,6 +22,8 @@ A phone-first web app for timed kettlebell circuits. It's for Jass, who trains a
 
 - **Workout length:** 10 / 15 / 20 / 30 / 45 minutes, **including** the warm-up and cool-down. Every combination must come out at exactly the chosen length.
 - **Focus:** Full body / Legs / Upper body / Core.
+- **Kit:** setup toggles for a **16 kg bell** (off until Jass has it) and a **chair** (on). The 10 kg bell is always assumed. The builder only picks moves the kit supports. With the 16 kg, moves marked `hv` (legs, hinges, swings, rows) use it and everything else stays on 10 kg; the preview, the player and the voice ("…, 16 kilo") say which bell to use. There is no pull-up bar, so pulling is done with bell rows.
+- **Calisthenics:** bodyweight moves sit alongside the bell moves, with their own harder-version ladders (for example incline push-up → push-up; Bulgarian split squat → goblet Bulgarian → shrimp squat). Chair moves draw a chair.
 - **Work/rest presets:** 30/30, 40/20 (default), 45/15, 50/10, or custom (work 15–120 s, rest 5–90 s, in 5 s steps).
 - **Rest between rounds:** adjustable at 30 / 45 / 60 (default) / 90 / 120 s.
 - **Structure:** circuits of moves repeated for rounds, with a 3-round target. 10 and 15-minute workouts usually come out at 2 rounds.
@@ -54,14 +56,19 @@ A phone-first web app for timed kettlebell circuits. It's for Jass, who trains a
    - **Interpolation:** angles are interpolated as plain numbers, so pick values that don't swing the long way round. For example, use 230 rather than −130 when coming from 180, and −180 rather than 180 when coming from −90.
    - **Centring:** `m.cx` comes from `bounds()` and keeps each move centred.
    - **Bell trail:** the player and move sheet pass `{trail:1}`, which draws a faint dotted line along the bell's path for one loop. It's skipped when the bell barely moves.
+   - **Pinning:** a pose with `pin:'aN'` (any joint) and `ph` holds that joint at a fixed spot `ph` above the ground instead of dropping the lowest point to the floor. Chair moves pin a floor contact so the chair never slides between frames.
+   - **Pose solver:** `rig()` builds a side-view pose from where the hip, hands and ankles must be; `plankRig()` (straight body) and `pikeRig()` (hips high) build on it, with `ikL()` and `meet()` underneath. The calisthenics moves use these.
    - **Arm helpers:** `ik2()` solves a two-link arm, `handsF()` places both hands in front view, `bellF()` places the bell itself in front view, and `unwrapKF()` keeps angles from swinging the long way round between keyframes. The halo, Russian twist, around the world, figure 8 and knees to chest are built with them.
-3. **Poses and the move library:** `MOVES` holds 75 moves. Each has `{id, name, areas[], pat, uni, lvl, bw, cues[3], kf, view, thumb}`, plus `up` and `calls` where they apply.
-   - **Ladders:** `UPS` maps a move ID to its harder version, which becomes `m.up`. Both ends must have the same `uni` setting, so a ladder never changes the number of slots.
+3. **Poses and the move library:** `MOVES` holds 91 moves. Each has `{id, name, areas[], pat, uni, lvl, bw, cues[3], kf, view, thumb}`, plus `up` and `calls` where they apply.
+   - **Ladders:** `UPS` maps a move ID to its harder version, which becomes `m.up`. Both ends must have the same `uni` setting, so a ladder never changes the number of slots. `upOf(m)` skips rungs the kit can't do.
+   - **Kit fields:** `need:['chair']` (or any kit key) limits a move to that kit; `hv:1` means it uses the 16 kg when available; `bw:1` means no bell. `KIT` holds the current workout's kit, `avail(m)` checks a move against it and `kgOf(m,kit)` gives the bell weight.
+   - **Chair moves:** `chair:{at, dx, back, frame?}` draws a chair under the joint `at` (seat centre nudged by `dx`, backrest on side `back`) as placed in keyframe `frame`. Seat height is `CH=36`.
    - **Complexes:** IDs start with `x_`. `calls:[[keyframe index, word], …]` lists the steps; the first must be at keyframe 0. The word is spoken and highlighted when the figure reaches that keyframe.
    - **areas:** any of `full`, `legs`, `upper`, `core`.
    - **pat:** one of `ballistic`, `squat`, `lunge`, `hinge`, `push`, `pull`, `arms`, `flex`, `antiext`, `rot`, `carry`.
    - Warm-ups are in `WARM` and stretches in `COOL`. Which ones each focus uses is set by `WARM_BY` and `COOL_BY`.
 4. **Workout generator:**
+   - **Kit:** `buildWorkout` stores `cfg.kit` and sets `KIT`; `basePool`, ladders and swaps only use moves where `avail(m)` is true.
    - **Finisher:** `FIN_W`, `FIN_R`, `FIN_SET`, `FIN_N[mins]` and `finSecs(mins)`. `buildWorkout` subtracts `finSecs` from circuit time before `fitPlan`, so the exact-length guarantee still holds. `wk.fin = {id, n}` or `null`; `sequence` adds `finset`, `fin` and `finrest` intervals before the cool-down.
    - **Base times:** `BASE[mins]=[warm-up seconds, cool-down seconds]`, plus `READY=10` and `SET=15` (the get-set gap between the warm-up and the circuits).
    - **`fitPlan(M,W,R,RR,maxSlots,allow)`:** searches circuits `c` (1–5), rounds `r` (1–4) and total slots `S`. The circuit time is `D = r·(S·W + (S−c)·R) + (r·c−1)·RR`. The score is `|M−D|·0.5` plus penalties: r≠3, an average of fewer than 4 or more than 6 slots per circuit, and each extra circuit.
@@ -92,9 +99,9 @@ A phone-first web app for timed kettlebell circuits. It's for Jass, who trains a
 You need Python 3 with Playwright (`pip install playwright && playwright install chromium`). If Playwright's own browser is missing or the wrong version, run the scripts with `USE_SYSTEM_CHROME=1` to use the installed Chrome or Chromium instead.
 
 ```bash
-python3 tests/check_timing.py   # every length × focus × interval × round-rest × difficulty × finisher combination: exact length before and after swaps, finisher present and not repeating a circuit move, no repeated moves, ladders keep the one-sided setting
+python3 tests/check_timing.py   # every length × focus × interval × round-rest × difficulty × finisher × kit (10 kg only, with 16 kg, without the chair) combination: exact length before and after swaps, finisher present and not repeating a circuit move, no move the kit can't do (before and after swaps), no repeated moves, ladders keep the one-sided setting
 python3 tests/render_moves.py   # draws every move's keyframes to tests/out/moves.png so you can look at them
-python3 tests/run_through.py    # phone-sized run: setup → preview → swap → play at 60–400× speed → summary → history → moves, checks the finisher ran and the rating buttons (change, Undo, saved rating), then a Brutal workout to check complex steps in both voice modes; fails on JS errors
+python3 tests/run_through.py    # phone-sized run: setup → preview → swap → play at 60–400× speed → summary → history → moves, checks the finisher ran and the rating buttons (change, Undo, saved rating), then a Brutal workout to check complex steps in both voice modes, and that 16 kg labels show once the 16 kg is switched on; fails on JS errors
 ```
 
 Look at `moves.png` after any change to poses. A bad angle usually shows up as a figure floating, sinking, or upside down.
@@ -102,7 +109,8 @@ Look at `moves.png` after any change to poses. A bad angle usually shows up as a
 ## Known limitations and ideas
 
 - **Figures:** still schematic. The halo, Russian twist, around the world and figure 8 now use front views, which read better than the old side views, but the hands sometimes cross the face in the halo. Knees to chest is still the weakest figure.
-- **10 kg is light for legs:** the library leans on single-leg, tempo and pulse moves to make up for it. A heavier bell would need either a weight setting or no changes at all, since timings don't depend on load.
+- **Bell weights are fixed per move:** each move is either a 16 kg move (`hv`) or a 10 kg move. There's no per-move override yet, and the rating doesn't switch bells.
+- **Not built yet (agreed next round):** weekly sets per muscle, rep logging, drop sets (16 → 10 kg), and uneven two-bell moves.
 - **History:** stays on one device and is lost if Chrome's site data is cleared. There's no export yet.
 - **Voice:** depends on the phone's text-to-speech engine.
 - **Complex voice on the phone:** move-by-move calls were only tested in desktop Chrome with speech stubbed. Android text-to-speech can lag or drop short words; check on the real phone.
@@ -144,3 +152,4 @@ Reviewed on 2026-11-14. The app is a static page in Chrome's sandbox: it opens n
 - **2026-11-14:** finisher (20/10 all-out before the cool-down, none at 10 min) and a "How hard was that?" rating that nudges one setting for next time, with Undo. Fixed "1 rounds" in the preview. Cache bumped to `kb-v4`.
 - **2026-11-14:** security review. Added security headers in `netlify.toml`, escaped stored history before display, and made the app ignore malformed history entries. Cache bumped to `kb-v5`.
 - **2026-11-14:** fonts self-hosted instead of loaded from Google Fonts, CSP tightened to the site's own files only, fonts precached for offline use. Cache bumped to `kb-v6`.
+- **2026-11-22:** kit setting (16 kg bell, chair), bell weight per move shown in the preview, player and voice, 16 calisthenics moves with ladders, chairs drawn in the figures, contact pinning and a pose solver in the figure engine. Cache bumped to `kb-v7`.

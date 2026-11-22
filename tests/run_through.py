@@ -11,7 +11,9 @@ with sync_playwright() as p:
     b=launch(p); pg,errs=page(b,viewport={'width':390,'height':844},device_scale_factor=2)
     shot=lambda n:pg.screenshot(path=os.path.join(OUT,n+'.png'))
     shot('1_setup')
+    pg.click('#t-kg16'); assert pg.evaluate('KB.settings.kg16')
     pg.click('text=30 min'); pg.click('text=Legs'); pg.click('#b-build'); shot('2_preview')
+    kg_shown=pg.locator('#pv-body small', has_text='16 kg').count()
     pg.click('.swap >> nth=0'); pg.click('#b-start'); pg.wait_for_timeout(800); shot('3_ready')
     wait_kind(pg,'work'); shot('4_work')
     wait_kind(pg,'rest'); shot('5_rest')
@@ -53,5 +55,6 @@ with sync_playwright() as p:
     once_ok=not [t for t in spoken2 if t in words2] and on2==1
     print('complex, move by move:',name1,'| spoken:',spoken1,'|','ok' if step_ok else 'FAIL')
     print('complex, name once:',name2,'| spoken:',spoken2,'|','ok' if once_ok else 'FAIL')
+    print('16 kg labels in legs preview:',kg_shown,'|','ok' if kg_shown>0 else 'FAIL')
     print('history entries:',n,'| JS errors:',errs or 'none','| screenshots in',OUT)
-    b.close(); sys.exit(1 if errs or n<1 or not step_ok or not once_ok or not rate_ok else 0)
+    b.close(); sys.exit(1 if errs or n<1 or not step_ok or not once_ok or not rate_ok or kg_shown==0 else 0)

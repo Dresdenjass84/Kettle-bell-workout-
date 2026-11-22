@@ -117,7 +117,14 @@ nav.tabs svg{width:24px;height:24px}
 
 <div id="v-setup" class="wrap">
   <h1>Kettlebell timer</h1>
-  <p class="sub">One 10 kg bell. Timed circuits.</p>
+  <p class="sub">Kettlebells and bodyweight. Timed circuits.</p>
+
+  <div class="lbl">Your kit</div>
+  <div class="toggles">
+    <button class="tog" id="t-kg16">16 kg bell <i></i></button>
+    <button class="tog" id="t-chair">Chair <i></i></button>
+  </div>
+  <p class="hint" id="kit-hint"></p>
 
   <div class="lbl">Length</div>
   <div class="chips" id="c-len"></div>
@@ -213,7 +220,7 @@ nav.tabs svg{width:24px;height:24px}
     <div class="p-phase" id="p-phase">Work</div>
     <div class="p-time" id="p-time">0:40</div>
     <div class="p-name" id="p-name"></div>
-    <div><span class="p-side hide" id="p-side"></span></div>
+    <div><span class="p-side hide" id="p-side"></span> <span class="p-side hide" id="p-kg"></span></div>
     <svg class="p-fig" id="p-fig" viewBox="0 0 200 190"></svg>
     <div class="p-cues" id="p-cues"></div>
     <div class="p-next" id="p-next"></div>
@@ -237,7 +244,7 @@ function hist(){const h=store.get('history',[]);return Array.isArray(h)?h.filter
 /* ================= Figure engine ================= */
 const RAD=Math.PI/180, GROUND=182, CX=100;
 const SEG={torso:46,ua:24,fa:22,th:32,sh:32,head:8,neck:14,bell:7};
-const ST={t:180,hd:0,na:5,nf:5,fa:-5,ff:-5,nt:0,ns:0,ft:0,fs:0,x:0,y:0,ls:1,ts:1,sw:1,bo:1};
+const ST={t:180,hd:0,na:5,nf:5,fa:-5,ff:-5,nt:0,ns:0,ft:0,fs:0,x:0,y:0,ls:1,ts:1,sw:1,bo:1,ph:0};
 const NUMK=Object.keys(ST);
 const D=(a,l)=>[Math.sin(a*RAD)*l,Math.cos(a*RAD)*l];
 const add=(p,v)=>[p[0]+v[0],p[1]+v[1]];
@@ -262,12 +269,18 @@ function fk(p,view){
   // ground anchor
   let my=-1e9;const c=(q,r)=>{if(q&&q[1]+r>my)my=q[1]+r;};
   [kN,aN,kF,aF,tN,tF].forEach(q=>c(q,2));[elN,hN,elF,hF].forEach(q=>c(q,3));c(hip,3);c(sh,3);c(head,SEG.head);if(bell)c(bell,SEG.bell);
-  const dy=GROUND-my+(p.y||0);
-  for(const k in pts){if(pts[k])pts[k]=[pts[k][0]+(p.x||0),pts[k][1]+dy];}
+  // pin: hold one joint at a fixed spot (x=0, ph above the ground) instead of dropping the lowest point to the floor
+  let dx=p.x||0,dy=GROUND-my+(p.y||0);
+  if(p.pin&&pts[p.pin]){dx-=pts[p.pin][0];dy=GROUND-p.ph-pts[p.pin][1];}
+  for(const k in pts){if(pts[k])pts[k]=[pts[k][0]+dx,pts[k][1]+dy];}
   return pts;
 }
-function bounds(frames,view){let a=1e9,z=-1e9;frames.forEach(f=>{const q=fk(f[0],view);for(const k in q){if(q[k]){a=Math.min(a,q[k][0]);z=Math.max(z,q[k][0]);}}});return (a+z)/2;}
-function lerpPose(A,B,u){const o={};for(const k of NUMK)o[k]=A[k]+(B[k]-A[k])*u;o.b=A.b;o.toe=A.toe;o.view=A.view;return o;}
+function bounds(frames,view,m){let a=1e9,z=-1e9;frames.forEach(f=>{const q=fk(f[0],view);for(const k in q){if(q[k]){a=Math.min(a,q[k][0]);z=Math.max(z,q[k][0]);}}});
+  if(m&&m.chair){const c=chairX(m);a=Math.min(a,c-16);z=Math.max(z,c+16);}return (a+z)/2;}
+// Chair seat centre (figure space) for a move that uses one: under the contact joint, nudged by dx
+const CH=36; // chair seat height, about 45 cm at the figure's scale
+function chairX(m){return fk(m.kf[m.chair.frame||0][0],m.view)[m.chair.at][0]+(m.chair.dx||0);}
+function lerpPose(A,B,u){const o={};for(const k of NUMK)o[k]=A[k]+(B[k]-A[k])*u;o.b=A.b;o.toe=A.toe;o.view=A.view;o.pin=A.pin;return o;}
 const NS='http://www.w3.org/2000/svg';
 function el(tag,attrs,parent){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(parent)parent.appendChild(e);return e;}
 // Draws the figure: tapered limbs, a solid torso, hands, feet and a kettlebell with a handle.
@@ -276,6 +289,8 @@ function makeFig(svg,opt={}){
   svg.innerHTML='';
   const near=opt.near||'#ffffff', bellC=opt.bell||'#ff7a3d', gc=opt.ground||'rgba(255,255,255,.25)', farOp=opt.farOp||.42;
   el('line',{x1:10,y1:GROUND+1,x2:190,y2:GROUND+1,stroke:gc,'stroke-width':2,'stroke-linecap':'round'},svg);
+  const chairG=el('g',{stroke:opt.chair||'rgba(255,255,255,.5)','stroke-linecap':'round',visibility:'hidden'},svg);
+  const cSeat=el('line',{'stroke-width':4},chairG),cL1=el('line',{'stroke-width':3},chairG),cL2=el('line',{'stroke-width':3},chairG),cBack=el('line',{'stroke-width':3.5},chairG);
   const trail=el('polyline',{fill:'none',stroke:bellC,'stroke-width':2.2,'stroke-dasharray':'1 6','stroke-linecap':'round',opacity:0},svg);
   const farG=el('g',{opacity:farOp},svg);
   const seg=(w,par=svg)=>el('line',{stroke:near,'stroke-width':w,'stroke-linecap':'round'},par);
@@ -315,6 +330,12 @@ function makeFig(svg,opt={}){
       const bx=q.bell[0]-ux*7.2,by=q.bell[1]-uy*7.2;S(g.base,[bx+uy*4,by-ux*4],[bx-uy*4,by+ux*4]);
     }else bellG.setAttribute('visibility','hidden');
   };
+  draw.setChair=function(m){
+    if(!m.chair){chairG.setAttribute('visibility','hidden');return;}
+    const x=chairX(m)+CX-m.cx,y=GROUND-CH,b=m.chair.back||-1,xb=x+b*13;
+    S(cSeat,[x-13,y],[x+13,y]);S(cL1,[x-11,y],[x-11,GROUND]);S(cL2,[x+11,y],[x+11,GROUND]);S(cBack,[xb,y],[xb+b*3,y-38]);
+    chairG.setAttribute('visibility','visible');
+  };
   // faint dotted line showing the path the bell travels during one loop
   draw.setTrail=function(m){
     if(m._trail===undefined){
@@ -340,7 +361,7 @@ function poseAt(m,t){
 // Animated figure registry
 const anims=new Map();let animRAF=0;
 function animate(svg,m,opt){
-  const draw=makeFig(svg,opt);if(opt&&opt.trail)draw.setTrail(m);anims.set(svg,{m,draw,t0:performance.now(),clock:opt&&opt.clock});
+  const draw=makeFig(svg,opt);draw.setChair(m);if(opt&&opt.trail)draw.setTrail(m);anims.set(svg,{m,draw,t0:performance.now(),clock:opt&&opt.clock});
   draw(m.kf[0][0],m.view,m.cx);
   if(!animRAF)animRAF=requestAnimationFrame(tick);
 }
@@ -349,7 +370,7 @@ function tick(now){
   for(const [svg,a] of anims){if(!svg.isConnected){anims.delete(svg);continue;}a.draw(poseAt(a.m,a.clock?a.clock():(now-a.t0)/1000),a.m.view,a.m.cx);}
   animRAF=anims.size?requestAnimationFrame(tick):0;
 }
-function staticFig(svg,m,opt){const draw=makeFig(svg,opt);const i=m.thumb!=null?m.thumb:Math.min(1,m.kf.length-1);draw(m.kf[i][0],m.view,m.cx);}
+function staticFig(svg,m,opt){const draw=makeFig(svg,opt);draw.setChair(m);const i=m.thumb!=null?m.thumb:Math.min(1,m.kf.length-1);draw(m.kf[i][0],m.view,m.cx);}
 
 /* ================= Poses ================= */
 const P=(...o)=>Object.assign({},ST,...o);
@@ -394,6 +415,29 @@ function handsF(nx,ny,fx,fy,o={}){
 }
 // Front view, bell held in both hands: solves for the hands so the bell itself lands on (bx,by).
 function bellF(bx,by,o={}){let hx=bx,hy=by,h;for(let i=0;i<4;i++){h=handsF(hx+3,hy,hx-3,hy,o);const v=D((h.nf+h.ff)/2,SEG.bell);hx=bx-v[0];hy=by-v[1];}return h;}
+// --- Side-view pose solver: give it where the hip, hands and ankles must be (y down, ground at y=0) and it
+// works out the joint angles. Used for the calisthenics moves so hands and feet stay put on the floor or chair.
+const ang=(dx,dy)=>Math.atan2(dx,dy)/RAD;
+function ikL(sx,sy,tx,ty,mode,L1,L2){ // mode: +1/-1 bend towards screen right/left, 'up' or 'down'
+  const dx=tx-sx,dy=ty-sy,d0=Math.hypot(dx,dy)||1,d=Math.min(Math.max(d0,Math.abs(L1-L2)+.5),L1+L2-.3);
+  const a=ang(dx,dy),al=Math.acos(Math.min(1,(L1*L1+d*d-L2*L2)/(2*L1*d)))/RAD;let best=null;
+  for(const u of [a+al,a-al]){const ex=sx+Math.sin(u*RAD)*L1,ey=sy+Math.cos(u*RAD)*L1;const sc=mode==='up'?-ey:mode==='down'?ey:mode*ex;if(!best||sc>best.sc)best={u,ex,ey,sc};}
+  const k=d/d0;return [best.u,ang(sx+dx*k-best.ex,sy+dy*k-best.ey)];
+}
+function rig(o){
+  const s=[o.hip[0]+Math.sin(o.t*RAD)*SEG.torso,o.hip[1]+Math.cos(o.t*RAD)*SEG.torso],p={t:o.t};
+  if(o.hn){const a=ikL(s[0],s[1],o.hn[0],o.hn[1],o.am||-1,SEG.ua,SEG.fa);p.na=a[0];p.nf=a[1];}
+  if(o.hf){const a=ikL(s[0],s[1],o.hf[0],o.hf[1],o.am||-1,SEG.ua,SEG.fa);p.fa=a[0];p.ff=a[1];}else if(o.hn){p.fa=p.na;p.ff=p.nf;}
+  if(o.an){const a=ikL(o.hip[0],o.hip[1],o.an[0],o.an[1],o.km||1,SEG.th,SEG.sh);p.nt=a[0];p.ns=a[1];}
+  if(o.af){const a=ikL(o.hip[0],o.hip[1],o.af[0],o.af[1],o.kmf||o.km||1,SEG.th,SEG.sh);p.ft=a[0];p.fs=a[1];}else if(o.an){p.ft=p.nt;p.fs=p.ns;}
+  return p;
+}
+// Point where two circles meet; pick=+1/-1 chooses which of the two
+function meet(A,ra,B,rb,pick){const dx=B[0]-A[0],dy=B[1]-A[1],d=Math.hypot(dx,dy),a=(ra*ra-rb*rb+d*d)/(2*d),h=Math.sqrt(Math.max(0,ra*ra-a*a)),mx=A[0]+dx*a/d,my=A[1]+dy*a/d;return [mx+pick*h*dy/d,my-pick*h*dx/d];}
+// Straight body from ankles F to shoulders, hands at H, shoulder-to-hand distance r (46 is arms locked)
+function plankRig(F,H,r){const L=SEG.th+SEG.sh+SEG.torso,S=meet(F,L,H,r,1),k=(SEG.th+SEG.sh)/L,hip=[F[0]+(S[0]-F[0])*k,F[1]+(S[1]-F[1])*k];return rig({hip,t:ang(S[0]-hip[0],S[1]-hip[1]),hn:H,an:F});}
+// Hips-high pike: hip placed by hand, shoulder found from the hand distance r
+function pikeRig(F,H,hip,r){const S=meet(hip,SEG.torso,H,r,1);return rig({hip,t:ang(S[0]-hip[0],S[1]-hip[1]),hn:H,an:F,km:-1});}
 // Keeps each angle within 180 degrees of the previous keyframe so the tween takes the short way round.
 function unwrapKF(kf){const keys=['t','na','nf','fa','ff','nt','ns','ft','fs'];for(let i=1;i<kf.length;i++)for(const k of keys){const p=kf[i-1][0][k];let v=kf[i][0][k];while(v-p>180)v-=360;while(v-p<-180)v+=360;kf[i][0][k]=v;}return kf;}
 
@@ -482,6 +526,46 @@ mv({id:'racklungepress',name:'Rack lunge to press',uni:1,areas:['legs','full','u
 mv({id:'srdlrow',name:'Single-leg deadlift to row',uni:1,areas:['legs','upper','core'],pat:'hinge',cues:['Hinge on one leg until the torso is flat','Hold there and row the bell to the hip','Lower the bell, then stand'],kf:[[P({b:'n'},A.downN),1.1],[SLD,.7],[P(SLD,{na:-150,nf:-10}),.7],[SLD,.9]],thumb:2});
 mv({id:'pushuprow',name:'Push-up to row',uni:1,areas:['upper','core'],pat:'pull',cues:['One hand on the bell handle, feet wide','Full push-up, then row the bell','Hips stay square to the floor'],kf:[[P(PLANK,{b:'n'}),.7],[P(PUSHDN,{b:'n'}),.7],[P(PLANK,{b:'n'}),.6],[P(PLANK,{b:'n',na:-120,nf:-10}),.7]],thumb:3});
 mv({id:'tgu',name:'Turkish get-up',uni:1,lvl:3,areas:['full','core','upper'],pat:'antiext',cues:['Eyes on the bell, arm locked the whole way','Elbow, hand, sweep the leg to a half-kneel, stand','Reverse every step slowly'],kf:[[P(SUP,{b:'n',na:-180,nf:-180,ft:-90,fs:-90}),1],[P(SUP,{b:'n',t:120,na:-180,nf:-180,fa:-12,ff:-90,ft:-90,fs:-90}),1],[P(SUP,{b:'n',t:150,na:-180,nf:-180,fa:-22,ff:-22,ft:-90,fs:-90}),1.2],[P({b:'n',na:-180,nf:-180,nt:85,ns:0,ft:0,fs:-90}),1.2],[P({b:'n',na:-180,nf:-180}),1],[P({b:'n',na:-180,nf:-180,nt:85,ns:0,ft:0,fs:-90}),1.2],[P(SUP,{b:'n',t:150,na:-180,nf:-180,fa:-22,ff:-22,ft:-90,fs:-90}),1.2],[P(SUP,{b:'n',t:120,na:-180,nf:-180,fa:-12,ff:-90,ft:-90,fs:-90}),1]],thumb:3});
+// --- Calisthenics (bodyweight, some using a chair). need:[...] lists kit a move requires.
+const FY=-3,HY=-3.6,ARMS_DN={na:-8,nf:-8,fa:8,ff:8},ARMS_FWD={na:88,nf:88,fa:88,ff:88};
+const PIN_A={pin:'aN',ph:3},PIN_H={pin:'hN',ph:3.6};
+mv({id:'inclinepush',name:'Incline push-up',need:['chair'],bw:1,areas:['upper','core'],pat:'push',cues:['Hands on the chair seat, chair against a wall','Body in one straight line','Chest to the seat edge, then press away'],
+  kf:unwrapKF([[P(plankRig([0,FY],[88,-CH+HY],45),PIN_A),.8],[P(plankRig([0,FY],[88,-CH+HY],29),PIN_A),.9]]),chair:{at:'hN',dx:9,back:1},thumb:1});
+mv({id:'temppush',name:'Tempo push-up',bw:1,areas:['upper','core'],pat:'push',cues:['3 seconds down, chest to the floor','Pause at the bottom','Press up hard'],
+  kf:unwrapKF([[P(plankRig([0,FY],[100,HY],45),PIN_A),3],[P(plankRig([0,FY],[100,HY],29),PIN_A),.6],[P(plankRig([0,FY],[100,HY],29),PIN_A),.7]]),thumb:1});
+mv({id:'declinepush',name:'Decline push-up',need:['chair'],bw:1,areas:['upper','core'],pat:'push',cues:['Feet on the chair seat, hands on the floor','Body straight, no sagging hips','Lower your forehead towards the floor'],
+  kf:unwrapKF([[P(plankRig([0,-CH+FY],[96,HY],45),PIN_H),.8],[P(plankRig([0,-CH+FY],[96,HY],29),PIN_H),.9]]),chair:{at:'aN',dx:-7,back:-1},thumb:1});
+mv({id:'pike',name:'Pike push-up',bw:1,areas:['upper'],pat:'push',cues:['Hips high, body in an upside-down V','Lower the top of your head towards the floor','Press back up through the shoulders'],
+  kf:unwrapKF([[P(pikeRig([0,FY],[58,HY],[24,-60],45),PIN_A),.8],[P(pikeRig([0,FY],[58,HY],[26,-50],24),PIN_A),.9]]),thumb:1});
+mv({id:'elevpike',name:'Feet-up pike push-up',need:['chair'],bw:1,areas:['upper'],pat:'push',cues:['Feet on the chair, hips stacked over the shoulders','Head lowers between the hands','The closer to vertical, the harder'],
+  kf:unwrapKF([[P(pikeRig([0,-CH+FY],[70,HY],[40,-88],45),PIN_H),.8],[P(pikeRig([0,-CH+FY],[70,HY],[48,-64],24),PIN_H),.9]]),chair:{at:'aN',dx:-6,back:-1},thumb:1});
+mv({id:'dips',name:'Chair dips',need:['chair'],bw:1,areas:['upper'],pat:'arms',cues:['Hands on the seat edge, chair against a wall','Lower until the upper arms are level','Elbows point back, shoulders down'],
+  kf:unwrapKF([[P(rig({hip:[13,-CH+HY-44+46],t:180,hn:[0,-CH+HY],am:-1,an:[60,FY],km:'up'}),PIN_A),.8],[P(rig({hip:[15,-CH+HY-26+46],t:180,hn:[0,-CH+HY],am:-1,an:[60,FY],km:'up'}),PIN_A),.9]]),chair:{at:'hN',dx:-9,back:-1},thumb:1});
+const BSS=(hip,arms)=>P(rig({hip,t:170,an:[0,FY],km:1,af:[-60,-CH+FY],kmf:'down'}),arms,PIN_A);
+mv({id:'bulgarian',name:'Bulgarian split squat',uni:1,need:['chair'],bw:1,areas:['legs','full'],pat:'lunge',cues:['Rear foot laces-down on the chair','Drop straight down, front knee over the toes','Drive up through the front heel'],
+  kf:unwrapKF([[BSS([-16,-60],ARMS_DN),.9],[BSS([-20,-34],ARMS_DN),.9]]),chair:{at:'aF',dx:-7,back:-1},thumb:1});
+mv({id:'gobbulg',name:'Goblet Bulgarian split squat',uni:1,need:['chair'],hv:1,areas:['legs','full'],pat:'lunge',cues:['Bell at the chest, rear foot on the chair','Sink until the back knee nearly touches','3 seconds down for extra work'],
+  kf:unwrapKF([[BSS([-16,-60],{...A.gob,b:'both'}),1],[BSS([-20,-34],{...A.gob,b:'both'}),1]]),chair:{at:'aF',dx:-7,back:-1},thumb:1});
+const SHRIMP=(hip,t,ft,fs)=>P(rig({hip,t,an:[0,FY],km:1}),{ft,fs,...ARMS_FWD},PIN_A);
+mv({id:'shrimp',name:'Shrimp squat',uni:1,lvl:2,bw:1,areas:['legs'],pat:'squat',cues:['Stand on one leg, hold the other foot behind you','Lower until the back knee touches the floor','Arms forward for balance; hold a wall to start'],
+  kf:unwrapKF([[SHRIMP([-4,-61],176,-8,-150),.9],[SHRIMP([-16,-30],150,-30,-165),1]]),thumb:1});
+mv({id:'boxpistol',name:'Pistol to chair',uni:1,need:['chair'],bw:1,areas:['legs','full'],pat:'squat',cues:['Chair behind you, one leg out in front','Sit back slowly onto the seat on one leg','Stand without rocking; lower the chair height later'],
+  kf:unwrapKF([[P(rig({hip:[-6,-61],t:170,an:[0,FY],km:1}),{ft:70,fs:70,...ARMS_FWD},PIN_A),.9],[P(rig({hip:[-26,-CH-6],t:148,an:[0,FY],km:1}),{ft:96,fs:96,...ARMS_FWD},PIN_A),1]]),chair:{at:'hip',frame:1,dx:-7,back:-1},thumb:1});
+const SLHT=(hip,ft)=>{const S=[-58,-CH-5],t=ang(S[0]-hip[0],S[1]-hip[1]);return P(rig({hip,t,an:[0,FY],km:'up'}),{hd:-25,na:t+180,nf:t+150,fa:t+180,ff:t+150,ft,fs:ft},PIN_A);};
+mv({id:'slhipthrust',name:'Single-leg hip thrust',uni:1,need:['chair'],bw:1,areas:['legs','core'],pat:'hinge',cues:['Upper back on the chair edge, one foot down','Drive the hips up until the body is flat','Squeeze the glute and pause at the top'],
+  kf:unwrapKF([[SLHT([-20,-14],100),.9],[SLHT([-12,-CH-5],125),.9]]),chair:{at:'sh',dx:-12,back:-1},thumb:1});
+mv({id:'sissy',name:'Sissy squat',bw:1,areas:['legs'],pat:'squat',cues:['Hold a wall or chair back for balance','Knees travel forward as you lean back in one line','Go only as low as your knees allow'],
+  kf:[[P(ARMS_FWD),1],[P({t:238,nt:60,ns:-55,ft:60,fs:-55,na:100,nf:100,fa:100,ff:100}),1.1]],thumb:1});
+mv({id:'hollow',name:'Hollow hold',bw:1,areas:['core'],pat:'antiext',cues:['Lower back pressed into the floor','Arms and legs long, just off the floor','Bend the knees to make it easier'],
+  kf:[[P({t:100,hd:12,na:104,nf:104,fa:104,ff:104,nt:-102,ns:-102,ft:-102,fs:-102,toe:1}),1.5],[P({t:102,hd:12,na:106,nf:106,fa:106,ff:106,nt:-104,ns:-104,ft:-104,fs:-104,toe:1}),1.5]]});
+mv({id:'sideplank',name:'Side plank',uni:1,bw:1,view:'front',areas:['core'],pat:'antiext',cues:['Elbow or hand under the shoulder','Hips high, body in one line','Top arm reaches to the ceiling'],
+  kf:[[P({t:120,na:0,nf:0,fa:180,ff:180,nt:-60,ns:-60,ft:-60,fs:-60}),1.4],[P({t:122,na:0,nf:0,fa:175,ff:175,nt:-58,ns:-58,ft:-58,fs:-58}),1.4]]});
+const CROW=pull=>P(rig({hip:[-4,-56],t:100,an:[-14,FY],af:[10,FY],hf:[56,-CH+HY],am:-1}),pull?{na:-150,nf:-10}:{na:0,nf:0},{b:'n'},PIN_A);
+mv({id:'chairrow',name:'Chair-supported row',uni:1,need:['chair'],hv:1,areas:['upper','full'],pat:'pull',cues:['Free hand on the chair seat, flat back','Row the elbow back to the hip','Lower slowly to a full stretch'],
+  kf:unwrapKF([[CROW(0),.9],[CROW(1),.8]]),chair:{at:'hF',dx:9,back:1},thumb:1});
+const TUCK=(nt,ns)=>{const t=200,s=D(t,SEG.torso),a=ikL(s[0],s[1],-12,1,-1,SEG.ua,SEG.fa);return P({t,na:a[0],nf:a[1],fa:a[0],ff:a[1],nt,ns,ft:nt,fs:ns,pin:'hip',ph:CH+5});};
+mv({id:'kneetuck',name:'Seated knee tucks',need:['chair'],bw:1,areas:['core'],pat:'flex',cues:['Sit on the front of the seat, hands gripping behind','Lean back and pull the knees to the chest','Extend the legs without touching the floor'],
+  kf:[[TUCK(80,80),.8],[TUCK(150,15),.8]],chair:{at:'hip',dx:-6,back:-1}});
 // --- Complexes: several moves chained without putting the bell down. calls = [keyframe index, word the voice says]
 mv({id:'x_csp',name:'Clean, squat, press',uni:1,areas:['full','legs','upper'],pat:'ballistic',cues:['Clean to the rack','Squat deep with the bell racked','Stand and press, then back to the swing'],kf:[[HIKE1,.6],[RACK,.8],[RSQ,.8],[RACK,.6],[OH,.6],[RACK,.5]],calls:[[0,'Clean'],[1,'Squat'],[3,'Press']],thumb:2});
 mv({id:'x_cpl',name:'Clean, press, lunge',uni:1,areas:['full','legs','upper'],pat:'lunge',cues:['Clean and press','Bell back to the rack','Reverse lunge on the bell side'],kf:[[HIKE1,.6],[RACK,.6],[OH,.6],[RACK,.8],[RLUN,.8],[RACK,.5]],calls:[[0,'Clean'],[1,'Press'],[3,'Lunge']],thumb:4});
@@ -496,11 +580,11 @@ mv({id:'x_legs',name:'Good morning, squat, lunge',areas:['legs','full'],pat:'hin
 // Progression ladders: each move points at its harder version. Both must have the same one-sided setting so timings never change.
 const UPS={deadlift:'swing2',swing2:'swingsquat',h2h:'swingsquat',swingsquat:'x_ssp',gobsquat:'squat15',temposquat:'squat15',squat15:'thruster',pulsesquat:'thruster',thruster:'x_gsl',jumpsquat:'burpee',
   goblunge:'lungepress',lungepress:'x_gsl',latlunge:'cossack',sumo:'cossack',rdl:'goodmorning',goodmorning:'x_legs',bridge:'rdl',
-  floorpress2:'pushup',pushup:'tappushup',tappushup:'x_pp',row2:'highpull',curl:'curlpress',triceps:'curlpress',curlpress:'x_cpe',
-  situp:'situppress',deadbug:'pullthrough',pullthrough:'x_pp',birddog:'climbers',aroundworld:'fig8',
+  floorpress2:'inclinepush',inclinepush:'pushup',temppush:'declinepush',declinepush:'x_pp',pike:'elevpike',bulgarian:'gobbulg',gobbulg:'shrimp',boxpistol:'shrimp',chairrow:'row',kneetuck:'legraise',hollow:'pullthrough',pushup:'tappushup',tappushup:'x_pp',row2:'highpull',curl:'curlpress',triceps:'curlpress',curlpress:'x_cpe',
+  situp:'situppress',deadbug:'hollow',pullthrough:'x_pp',birddog:'climbers',aroundworld:'fig8',
   swing1:'snatch',snatch:'x_snl',clean:'cleanpress',cleanpress:'x_csp',floorpress:'press',press:'pushpress',pushpress:'cleanpress',
   racksquat:'rackthruster',rackthruster:'x_csp',splitsquat:'racklunge',racklunge:'racklungepress',racklungepress:'x_cpl',
-  suitcasedl:'srdl',srdl:'srdlrow',row:'renegade',renegade:'pushuprow',pushuprow:'x_mm',halftgu:'tgu',suitcasemarch:'waitermarch',slbridge:'srdl'};
+  suitcasedl:'srdl',srdl:'srdlrow',row:'renegade',renegade:'pushuprow',pushuprow:'x_mm',halftgu:'tgu',suitcasemarch:'waitermarch',slbridge:'slhipthrust',slhipthrust:'srdl'};
 
 // --- Warm-up (bodyweight / light)
 const WARM=[];const wm=o=>{o.view=o.view||'side';WARM.push(o);};
@@ -529,8 +613,13 @@ cm({id:'c_side',name:'Overhead side reach',view:'front',cues:['Reach up and over
 cm({id:'c_catcow',name:'Cat–cow',cues:['Slow, with the breath'],kf:[[P(QUAD,{t:108,hd:25}),1.5],[P(QUAD,{t:100,hd:-25}),1.5]]});
 const COOL_BY={full:['c_fold','c_quad','c_hipflex','c_chest','c_child','c_cobra','c_knees','c_side'],legs:['c_fold','c_quad','c_hipflex','c_knees','c_child','c_side','c_cobra'],upper:['c_chest','c_child','c_side','c_cobra','c_fold','c_catcow'],core:['c_cobra','c_child','c_knees','c_side','c_catcow','c_fold']};
 
-const ALL={};[...MOVES,...WARM,...COOL].forEach(m=>{m.cx=bounds(m.kf,m.view);ALL[m.id]=m;});
+const ALL={};[...MOVES,...WARM,...COOL].forEach(m=>{m.cx=bounds(m.kf,m.view,m);ALL[m.id]=m;});
 for(const k in UPS)ALL[k].up=UPS[k];
+// Moves that use the 16 kg bell when you have one: legs, hinges, swings and rows. Overhead, rotational and arm work stays on 10 kg.
+['swing2','swing1','h2h','deadlift','gobsquat','pulsesquat','temposquat','squat15','goblunge','racksquat','racklunge','splitsquat','srdl','rdl','suitcasedl','bridge','goodmorning','row','row2','highpull','swingsquat','latlunge','sumo','cossack','srdlrow','suitcasemarch','renegade','x_legs'].forEach(id=>ALL[id].hv=1);
+let KIT={kg16:false,chair:true};
+const avail=m=>(m.need||[]).every(n=>KIT[n]);
+const kgOf=(m,kit)=>m.bw?0:m.hv&&kit&&kit.kg16?16:10;
 
 /* ================= Workout generator ================= */
 const TEMPLATE={
@@ -575,12 +664,14 @@ function fitPlan(M,W,R,RR,maxSlots,allow,minPer=3){
 // Difficulty: 'std' repeats the same moves every round; 'hard' climbs one rung of each move's ladder per round;
 // 'max' starts one rung up, climbs, and may open with a complex.
 const DIFFS=[['std','Standard'],['hard','Hard'],['max','Brutal']];
-const basePool=(focus,diff)=>MOVES.filter(m=>(focus==='full'||m.areas.includes(focus))&&(diff==='max'||!m.calls));
+const basePool=(focus,diff)=>MOVES.filter(m=>(focus==='full'||m.areas.includes(focus))&&(diff==='max'||!m.calls)&&avail(m));
+// Next rung up, skipping rungs your kit can't do (and never changing the one-sided setting)
+function upOf(m){let n=m.up;while(n&&(!avail(ALL[n])||ALL[n].uni!==m.uni))n=ALL[n].up;return n;}
 function ladderFor(m,rounds,diff,used){
   const ok=id=>id&&!used.has(id);let cur=m;
-  if(diff==='max'&&ok(cur.up))cur=ALL[cur.up];
+  if(diff==='max'&&ok(upOf(cur)))cur=ALL[upOf(cur)];
   const out=[cur.id];
-  for(let r=1;r<rounds;r++){if(diff!=='std'&&ok(cur.up)&&!out.includes(cur.up))cur=ALL[cur.up];out.push(cur.id);}
+  for(let r=1;r<rounds;r++){const u=upOf(cur);if(diff!=='std'&&ok(u)&&!out.includes(u))cur=ALL[u];out.push(cur.id);}
   return out;
 }
 function chooseCircuits(plan,focus,recent,diff){
@@ -593,7 +684,7 @@ function chooseCircuits(plan,focus,recent,diff){
       const left=cap-filled, tok=tpl[k%tpl.length];k++;
       let cand=pool.filter(m=>!used.has(m.id)&&matches(m,tok)&&(m.uni?2:1)<=left);
       if(!cand.length&&guard>tpl.length)cand=pool.filter(m=>!used.has(m.id)&&(m.uni?2:1)<=left);
-      const m=pick(cand,recent,diff==='std'?null:x=>x.up&&!used.has(x.up));if(!m)continue;
+      const m=pick(cand,recent,diff==='std'?null:x=>upOf(x)&&!used.has(upOf(x)));if(!m)continue;
       used.add(m.id);const lad=ladderFor(m,plan.r,diff,used);lad.forEach(id=>used.add(id));
       moves.push(lad[0]);ladders.push(lad);filled+=m.uni?2:1;
     }
@@ -604,6 +695,7 @@ function chooseCircuits(plan,focus,recent,diff){
 function buildWorkout(cfg){
   if(!cfg.diff)cfg.diff='hard';
   if(cfg.fin==null)cfg.fin=true;
+  cfg.kit=KIT=Object.assign({kg16:false,chair:true},cfg.kit);
   const useFin=cfg.fin&&FIN_N[cfg.mins]>0;
   const T=cfg.mins*60;let [w,c]=BASE[cfg.mins];
   const M=T-w-c-SET-READY-(useFin?finSecs(cfg.mins):0);
@@ -629,7 +721,7 @@ function buildWorkout(cfg){
 }
 function spread(arr,total){const b=Math.floor(total/arr.length);let rem=total-b*arr.length;arr.forEach(x=>{x.dur=b+(rem>0?1:0);rem--;});}
 function swapMove(wk,ci,idx){
-  const cc=wk.circuits[ci], cur=ALL[cc.moves[idx]];
+  KIT=wk.cfg.kit;const cc=wk.circuits[ci], cur=ALL[cc.moves[idx]];
   const used=new Set(wk.circuits.flatMap(c=>c.ladders.flat()));if(wk.fin)used.add(wk.fin.id);
   const pool=basePool(wk.cfg.focus,wk.cfg.diff).filter(m=>!used.has(m.id)&&m.uni===cur.uni);
   let cand=pool.filter(m=>m.pat===cur.pat||(COREPATS.includes(cur.pat)&&COREPATS.includes(m.pat)));
@@ -689,7 +781,7 @@ function say(text,quick){
 
 /* ================= Settings + setup UI ================= */
 const PRESETS=[[30,30,'30 / 30'],[40,20,'40 / 20'],[45,15,'45 / 15'],[50,10,'50 / 10'],['c','c','Custom']];
-const settings=Object.assign({mins:20,focus:'full',preset:1,work:40,rest:20,rr:60,voice:true,beep:true,diff:'hard',cxVoice:'step',fin:true},store.get('settings',{}));
+const settings=Object.assign({mins:20,focus:'full',preset:1,work:40,rest:20,rr:60,voice:true,beep:true,diff:'hard',cxVoice:'step',fin:true,kg16:false,chair:true},store.get('settings',{}));
 const $=id=>document.getElementById(id);
 function saveSettings(){store.set('settings',settings);}
 function chipRow(host,items,isOn,onTap,cls){host.innerHTML='';items.forEach((it,i)=>{const b=document.createElement('button');b.className='chip'+(isOn(it,i)?' on':'');b.textContent=it.label;b.onclick=()=>{onTap(it,i);};host.appendChild(b);});}
@@ -700,6 +792,8 @@ function renderSetup(){
   $('custom-int').classList.toggle('hide',PRESETS[settings.preset][0]!=='c');
   $('cw').textContent=settings.work+'s';$('cr').textContent=settings.rest+'s';
   chipRow($('c-rr'),[30,45,60,90,120].map(v=>({v,label:v+'s'})),it=>it.v===settings.rr,it=>{settings.rr=it.v;saveSettings();renderSetup();});
+  $('t-kg16').classList.toggle('on',settings.kg16);$('t-chair').classList.toggle('on',settings.chair);
+  $('kit-hint').textContent='The 10 kg bell is always included. '+(settings.kg16?'Legs, swings and rows use the 16 kg; overhead, rotational and arm moves stay on the 10 kg. ':'')+(settings.chair?'Chair moves are included: use a sturdy chair against a wall.':'Moves that need a chair are left out.');
   $('t-voice').classList.toggle('on',settings.voice);$('t-beep').classList.toggle('on',settings.beep);
   chipRow($('c-diff'),DIFFS.map(([v,label])=>({v,label})),it=>it.v===settings.diff,it=>{settings.diff=it.v;saveSettings();renderSetup();});
   $('diff-hint').textContent={std:'The same moves every round.',hard:'Each round swaps in a harder version of the move, ending on complexes where it can.',max:'Starts on the harder versions, climbs every round, and can open with complexes.'}[settings.diff];
@@ -708,6 +802,8 @@ function renderSetup(){
   $('cxv-hint').textContent=!settings.voice?'Voice is off, so nothing is spoken.':settings.cxVoice==='step'?'A complex chains moves without putting the bell down. The voice calls each move in time with the figure, for example “Clean… squat… press”.':'A complex chains moves without putting the bell down. The voice names it once during the rest before.';
 }
 document.querySelectorAll('#custom-int button').forEach(b=>b.onclick=()=>{const k=b.dataset.k,d=+b.dataset.d;const lim=k==='work'?[15,120]:[5,90];settings[k]=Math.max(lim[0],Math.min(lim[1],settings[k]+d));saveSettings();renderSetup();});
+$('t-kg16').onclick=()=>{settings.kg16=!settings.kg16;saveSettings();renderSetup();};
+$('t-chair').onclick=()=>{settings.chair=!settings.chair;saveSettings();renderSetup();};
 $('t-voice').onclick=()=>{settings.voice=!settings.voice;saveSettings();renderSetup();};
 $('t-beep').onclick=()=>{settings.beep=!settings.beep;saveSettings();renderSetup();};
 
@@ -724,6 +820,8 @@ const FOCUSNAME={full:'Full body',legs:'Legs',upper:'Upper body',core:'Core'};
 const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const fmt=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');};
 const fmtMin=s=>{const m=Math.round(s/60);return m+' min';};
+// ' · 16 kg' etc., only when there are two bells to choose from
+const kgTxt=(m,kit)=>kit&&kit.kg16?(kgOf(m,kit)?' · '+kgOf(m,kit)+' kg':' · bodyweight'):'';
 function thumbSvg(m){const s=document.createElementNS(NS,'svg');s.setAttribute('viewBox','0 0 200 190');s.setAttribute('class','thumb');staticFig(s,m,{near:'#e9ebef',farOp:.38,ground:'rgba(255,255,255,.15)'});return s;}
 const SWAPICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h13l-3-3M20 17H7l3 3"/></svg>';
 function renderPreview(){
@@ -743,9 +841,9 @@ function renderPreview(){
     cc.moves.forEach((id,idx)=>{
       const m=ALL[id];const row=document.createElement('div');row.className='mrow';
       row.appendChild(thumbSvg(m));
-      const nm=document.createElement('div');nm.className='nm';nm.innerHTML='<b>'+m.name+(m.calls?'<span class="tag">Complex</span>':'')+(m.uni?'<span class="tag">L + R</span>':'')+'</b><small>'+(m.uni?'Left then right, '+c.work+'s each':c.work+'s')+'</small>';
+      const nm=document.createElement('div');nm.className='nm';nm.innerHTML='<b>'+m.name+(m.calls?'<span class="tag">Complex</span>':'')+(m.uni?'<span class="tag">L + R</span>':'')+'</b><small>'+(m.uni?'Left then right, '+c.work+'s each':c.work+'s')+kgTxt(m,c.kit)+'</small>';
       nm.querySelector('b').onclick=nm.querySelector('small').onclick=()=>openMove(m);
-      cc.ladders[idx].forEach((rid,ri)=>{if(ri===0||rid===cc.ladders[idx][ri-1])return;const u=ALL[rid];const e=document.createElement('small');e.className='rung';e.textContent='Round '+(ri+1)+': '+u.name;e.onclick=()=>openMove(u);nm.appendChild(e);});
+      cc.ladders[idx].forEach((rid,ri)=>{if(ri===0||rid===cc.ladders[idx][ri-1])return;const u=ALL[rid];const e=document.createElement('small');e.className='rung';e.textContent='Round '+(ri+1)+': '+u.name+kgTxt(u,c.kit);e.onclick=()=>openMove(u);nm.appendChild(e);});
       row.appendChild(nm);
       const sw=document.createElement('button');sw.className='swap';sw.setAttribute('aria-label','Swap '+m.name);sw.innerHTML=SWAPICO;sw.onclick=()=>{swapMove(WK,ci,idx);renderPreview();};
       row.appendChild(sw);card.appendChild(row);
@@ -757,7 +855,7 @@ function renderPreview(){
     body.insertAdjacentHTML('beforeend','<div class="sec-h"><h2>Finisher · '+wk.fin.n+' × '+FIN_W+'s</h2><span>'+fmt(finSecs(c.mins)-FIN_SET)+'</span></div>');
     const fc=document.createElement('div');fc.className='card';fc.style.padding='2px 6px';
     const row=document.createElement('div');row.className='mrow';row.appendChild(thumbSvg(fm));
-    const nm=document.createElement('div');nm.className='nm';nm.innerHTML='<b>'+fm.name+'</b><small>'+FIN_W+'s all out, '+FIN_R+'s rest'+(fm.uni?', sides alternate':'')+'</small>';nm.onclick=()=>openMove(fm);row.appendChild(nm);
+    const nm=document.createElement('div');nm.className='nm';nm.innerHTML='<b>'+fm.name+'</b><small>'+FIN_W+'s all out, '+FIN_R+'s rest'+(fm.uni?', sides alternate':'')+kgTxt(fm,c.kit)+'</small>';nm.onclick=()=>openMove(fm);row.appendChild(nm);
     const sw=document.createElement('button');sw.className='swap';sw.setAttribute('aria-label','Swap '+fm.name);sw.innerHTML=SWAPICO;sw.onclick=()=>{wk.fin.id=pickFinisher(c.focus,recentIds(),new Set([wk.fin.id,...wk.circuits.flatMap(x=>x.ladders.flat())]));renderPreview();};
     row.appendChild(sw);fc.appendChild(row);body.appendChild(fc);
   }
@@ -768,7 +866,7 @@ function renderPreview(){
   const total=sequence(wk).reduce((a,s)=>a+s.dur,0);
   body.insertAdjacentHTML('beforeend','<p class="sub" style="margin-top:14px;text-align:center">Total '+fmt(total)+'. Tap a move to see how it\'s done, or swap it.</p>');
 }
-$('b-build').onclick=()=>{WK=buildWorkout({mins:settings.mins,focus:settings.focus,work:settings.work,rest:settings.rest,rr:settings.rr,diff:settings.diff,fin:settings.fin});renderPreview();show('preview');};
+$('b-build').onclick=()=>{WK=buildWorkout({mins:settings.mins,focus:settings.focus,work:settings.work,rest:settings.rest,rr:settings.rr,diff:settings.diff,fin:settings.fin,kit:{kg16:settings.kg16,chair:settings.chair}});renderPreview();show('preview');};
 $('b-reshuffle').onclick=()=>{WK=buildWorkout(Object.assign({},WK.cfg));renderPreview();window.scrollTo(0,0);};
 $('b-back').onclick=()=>show('setup');
 
@@ -777,7 +875,7 @@ function openSheet(html){$('sheet-box').innerHTML=html;$('sheet').classList.add(
 function closeSheet(){$('sheet').classList.remove('show');const s=$('sheet-box').querySelector('svg.bigfig');if(s)stopAnim(s);}
 $('sheet').onclick=e=>{if(e.target.id==='sheet')closeSheet();};
 function openMove(m){
-  openSheet('<h3>'+m.name+'</h3><div class="summary-line">'+(m.areas||[]).map(a=>'<span class="pill">'+FOCUSNAME[a]+'</span>').join('')+(m.uni?'<span class="pill">Each side</span>':'')+(m.bw?'<span class="pill">No bell</span>':'')+(m.calls?'<span class="pill">Complex</span>':'')+'</div><svg class="bigfig" viewBox="0 0 200 190"></svg><ul class="cue-list">'+m.cues.map(c=>'<li>'+c+'</li>').join('')+'</ul>'+(m.up?'<p class="sub">Harder version: '+ALL[m.up].name+'</p>':'')+'<button class="btn sec" id="sheet-close">Close</button>');
+  openSheet('<h3>'+m.name+'</h3><div class="summary-line">'+(m.areas||[]).map(a=>'<span class="pill">'+FOCUSNAME[a]+'</span>').join('')+(m.uni?'<span class="pill">Each side</span>':'')+(m.bw?'<span class="pill">No bell</span>':'')+(m.need&&m.need.includes('chair')?'<span class="pill">Chair</span>':'')+(m.hv?'<span class="pill">16 kg if you have it</span>':'')+(m.calls?'<span class="pill">Complex</span>':'')+'</div><svg class="bigfig" viewBox="0 0 200 190"></svg><ul class="cue-list">'+m.cues.map(c=>'<li>'+c+'</li>').join('')+'</ul>'+(m.up?'<p class="sub">Harder version: '+ALL[m.up].name+'</p>':'')+'<button class="btn sec" id="sheet-close">Close</button>');
   animate($('sheet-box').querySelector('svg.bigfig'),m,{trail:1});
   $('sheet-close').onclick=closeSheet;
 }
@@ -789,7 +887,7 @@ function renderMoves(){
   const list=$('m-list');list.innerHTML='';
   MOVES.filter(m=>moveFilter==='all'||m.areas.includes(moveFilter)).forEach(m=>{
     const row=document.createElement('div');row.className='mrow';row.style.cursor='pointer';row.appendChild(thumbSvg(m));
-    row.insertAdjacentHTML('beforeend','<div class="nm"><b>'+m.name+(m.calls?'<span class="tag">Complex</span>':'')+(m.uni?'<span class="tag">L + R</span>':'')+'</b><small>'+m.areas.map(a=>FOCUSNAME[a]).join(' · ')+'</small></div>');
+    row.insertAdjacentHTML('beforeend','<div class="nm"><b>'+m.name+(m.calls?'<span class="tag">Complex</span>':'')+(m.need&&m.need.includes('chair')?'<span class="tag">Chair</span>':'')+(m.uni?'<span class="tag">L + R</span>':'')+'</b><small>'+m.areas.map(a=>FOCUSNAME[a]).join(' · ')+'</small></div>');
     row.onclick=()=>openMove(m);list.appendChild(row);
   });
 }
@@ -821,7 +919,7 @@ async function wakeOn(){try{if('wakeLock' in navigator){PL.wake=await navigator.
 function wakeOff(){try{if(PL.wake){PL.wake.release();PL.wake=null;}}catch(e){}}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&$('player').classList.contains('show')&&PL.running)wakeOn();});
 const sideWord=s=>s==='L'?'left side':s==='R'?'right side':'';
-function nameWithSide(it){if(!it)return '';const m=ALL[it.id];return m.name+(it.side?', '+sideWord(it.side):'');}
+function nameWithSide(it){if(!it)return '';const m=ALL[it.id],k=WK&&WK.cfg.kit&&WK.cfg.kit.kg16?kgOf(m,WK.cfg.kit):0;return m.name+(it.side?', '+sideWord(it.side):'')+(k?', '+k+' kilo':'');}
 function startWorkout(){
   initAudio();
   PL.seq=sequence(WK);PL.i=0;PL.doneSecs=0;PL.startedAt=Date.now();PL.total=PL.seq.reduce((a,s)=>a+s.dur,0);
@@ -836,6 +934,7 @@ function enter(i){
   const showIt=it.id?it:it.next;const m=showIt?ALL[showIt.id]:null;
   const isRest=!it.id;
   $('p-name').textContent=m?(isRest?'Next: ':'')+m.name:'';
+  const kgEl=$('p-kg'),kk=m&&WK.cfg.kit.kg16&&(it.k==='work'||it.k==='fin'||!it.id)?kgOf(m,WK.cfg.kit):0;kgEl.textContent=kk?kk+' KG':'';kgEl.classList.toggle('hide',!kk);
   const sd=$('p-side');if(showIt&&showIt.side){sd.textContent=showIt.side==='L'?'LEFT':'RIGHT';sd.classList.remove('hide');}else sd.classList.add('hide');
   const fig=$('p-fig');if(m){fig.style.visibility='visible';animate(fig,m,{near:'#ffffff',bell:it.k==='work'||it.k==='fin'?'#ffd166':'#ff9a5c',ground:'rgba(255,255,255,.35)',clock:it.k==='work'?workClock:null,trail:1});}else{fig.style.visibility='hidden';stopAnim(fig);}
   $('p-cues').innerHTML=m?(m.calls?'<div class="steps">'+m.calls.map(c=>'<span>'+c[1]+'</span>').join('')+'</div>':'')+m.cues.slice(0,m.calls?2:3).map(c=>'<div>'+c+'</div>').join(''):'';
@@ -965,7 +1064,7 @@ $('b-start').onclick=startWorkout;
 $('b-done').onclick=()=>show('history');
 
 /* expose for testing */
-window.KB={MOVES,WARM,COOL,ALL,buildWorkout,sequence,fitPlan,fk,setSpeed:s=>SPEED=s,PL,poseAt,makeFig,swapMove,stepAt,settings,nudge};
+window.KB={MOVES,WARM,COOL,ALL,buildWorkout,sequence,fitPlan,fk,setSpeed:s=>SPEED=s,PL,poseAt,makeFig,swapMove,stepAt,settings,nudge,chairX,CH};
 renderSetup();
 try{if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('sw.js');}catch(e){}
 </script>
